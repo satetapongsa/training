@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Vision Training Studio - Production Computer Vision Platform</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <div class="app-container">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-icon" title="Vision Studio">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M3 12h3m12 0h3M12 3v3m0 12v3"></path>
+            <path d="M5.6 5.6l2.1 2.1m8.6 8.6l2.1 2.1M5.6 18.4l2.1-2.1m8.6-8.6l2.1-2.1"></path>
+          </svg>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <div class="nav-item active" data-tab="dashboard">
+          <span class="nav-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="7" height="7"></rect>
+              <rect x="14" y="3" width="7" height="7"></rect>
+              <rect x="14" y="14" width="7" height="7"></rect>
+              <rect x="3" y="14" width="7" height="7"></rect>
+            </svg>
+          </span>
+          Dashboard
+        </div>
+        <div class="nav-item" data-tab="projects">
+          <span class="nav-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+            </svg>
+          </span>
+          Projects
+        </div>
+        <div class="nav-item" data-tab="datasets">
+          <span class="nav-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+              <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+              <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+            </svg>
+          </span>
+          Datasets
+        </div>
+        <div class="nav-item" data-tab="annotations">
+          <span class="nav-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 20h9"></path>
+              <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+            </svg>
+          </span>
+          Annotations
+        </div>
+        <div class="nav-item" data-tab="training">
+          <span class="nav-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+          </span>
+          Training
+        </div>
+        <div class="nav-item" data-tab="models">
+          <span class="nav-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+              <line x1="12" y1="22.08" x2="12" y2="12"></line>
+            </svg>
+          </span>
+          Models
+        </div>
+        <div class="nav-item" data-tab="inference">
+          <span class="nav-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="22" y1="12" x2="18" y2="12"></line>
+              <line x1="6" y1="12" x2="2" y2="12"></line>
+              <line x1="12" y1="6" x2="12" y2="2"></line>
+              <line x1="12" y1="22" x2="12" y2="18"></line>
+            </svg>
+          </span>
+          Inference
+        </div>
+        <div class="nav-item" data-tab="system">
+          <span class="nav-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect>
+              <rect x="9" y="9" width="6" height="6"></rect>
+              <line x1="9" y1="1" x2="9" y2="4"></line>
+              <line x1="15" y1="1" x2="15" y2="4"></line>
+              <line x1="9" y1="20" x2="9" y2="23"></line>
+              <line x1="15" y1="20" x2="15" y2="23"></line>
+              <line x1="20" y1="9" x2="23" y2="9"></line>
+              <line x1="20" y1="14" x2="23" y2="14"></line>
+              <line x1="1" y1="9" x2="4" y2="9"></line>
+              <line x1="1" y1="14" x2="4" y2="14"></line>
+            </svg>
+          </span>
+          System Info
+        </div>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="active-project-card">
+          <div class="project-label">Active Project</div>
+          <div class="project-name" id="activeProjectName">None selected</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-wrapper">
+      <header class="topbar">
+        <div class="topbar-title">
+          <h1 id="topbarTitle">Platform Overview</h1>
+        </div>
+        <div class="topbar-actions">
+          <button class="btn btn-sm btn-secondary" onclick="openModal('modalNewProject')">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            New Project
+          </button>
+          <button class="btn btn-sm btn-primary" onclick="openModal('modalNewDataset')">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            New Dataset
+          </button>
+        </div>
+      </header>
+
+      <div class="content-body">
+        <!-- TAB 1: DASHBOARD -->
+        <section id="view-dashboard" class="tab-view">
+          <div class="stats-grid">
+            <div class="stat-box">
+              <div class="stat-icon">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+              </div>
+              <div>
+                <div class="stat-value" id="statProjects">0</div>
+                <div class="stat-label">Total Projects</div>
+              </div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-icon">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+              </div>
+              <div>
+                <div class="stat-value" id="statCpu">0%</div>
+                <div class="stat-label">CPU Usage</div>
+              </div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-icon">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>
+              </div>
+              <div>
+                <div class="stat-value" id="statRam">0%</div>
+                <div class="stat-label">RAM Allocated</div>
+              </div>
+            </div>
+            <div class="stat-box" id="statGpuCard" style="grid-column: span 2;">
+              <div class="stat-icon">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"></rect><line x1="9" y1="9" x2="15" y2="9"></line><line x1="9" y1="15" x2="15" y2="15"></line><line x1="12" y1="9" x2="12" y2="15"></line></svg>
+              </div>
+              <div>
+                <div class="stat-value" id="statGpu" style="font-size: 15px;">Detecting Acceleration...</div>
+                <div class="stat-label">Hardware Acceleration Status</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title">Recent Training Runs</h2>
+            </div>
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+              <thead>
+                <tr style="border-bottom: 1px solid var(--border-color); text-align: left; color: var(--text-sub);">
+                  <th style="padding: 10px 0;">Model Name</th>
+                  <th>Architecture</th>
+                  <th>Status</th>
+                  <th>Epochs</th>
+                  <th>Best Metric</th>
+                </tr>
+              </thead>
+              <tbody id="recentJobsTable"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- TAB 2: PROJECTS -->
+        <section id="view-projects" class="tab-view" style="display: none;">
+          <div id="projectsGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px;"></div>
+        </section>
+
+        <!-- TAB 3: DATASETS -->
+        <section id="view-datasets" class="tab-view" style="display: none;">
+          <div class="card">
+            <div class="card-header">
+              <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                <h2 class="card-title">Dataset Selection</h2>
+                <select id="datasetSelector" class="form-select" style="width: 250px;" onchange="loadDatasetDetails(this.value)"></select>
+              </div>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button class="btn btn-sm btn-primary" onclick="document.getElementById('folderInput').click()">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path><polyline points="12 11 12 17"></polyline><polyline points="9 14 12 11 15 14"></polyline></svg>
+                  Upload Folder
+                </button>
+                <button class="btn btn-sm btn-secondary" onclick="openModal('modalImportFolder')">
+                  Import Server Path
+                </button>
+                <button class="btn btn-sm btn-secondary" onclick="openModal('modalSplitDataset')">
+                  Split Dataset
+                </button>
+                <button class="btn btn-sm btn-secondary" onclick="triggerDatasetValidation()">
+                  Validate Integrity
+                </button>
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 20px; font-size: 13px; color: var(--text-muted); margin-bottom: 20px; flex-wrap: wrap;">
+              <div>Images: <strong id="dsImagesCount" style="color:#fff;">0</strong></div>
+              <div>Annotations: <strong id="dsAnnotsCount" style="color:#fff;">0</strong></div>
+              <div>Distribution: <strong id="dsSplits" style="color:#fff;">Train: 0 | Val: 0 | Test: 0</strong></div>
+            </div>
+
+            <!-- Upload Dropzone -->
+            <div class="dropzone" id="dropzone">
+              <div class="dropzone-icon">
+                <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="17 8 12 3 7 8"></polyline>
+                  <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+              </div>
+              <h3 style="color:#fff; font-size: 16px; margin-bottom: 6px;">Drag & Drop Images or Folders Here</h3>
+              <p style="color:var(--text-sub); font-size: 12px; margin-bottom: 16px;">
+                Supports recursive folder drops, JPG, PNG, WebP, BMP, TIFF and companion YOLO .txt labels
+              </p>
+              <div style="display: flex; gap: 10px; justify-content: center;">
+                <button type="button" class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); document.getElementById('fileInput').click();">
+                  Browse Files
+                </button>
+                <button type="button" class="btn btn-sm btn-primary" onclick="event.stopPropagation(); document.getElementById('folderInput').click();">
+                  Upload Folder
+                </button>
+              </div>
+              <!-- Hidden Inputs -->
+              <input type="file" id="fileInput" multiple accept="image/*,.txt" style="display: none;" />
+              <input type="file" id="folderInput" webkitdirectory directory multiple style="display: none;" />
+            </div>
+
+            <!-- Live Upload Progress Card -->
+            <div id="uploadProgressBox" style="display: none; margin-top: 16px; background: #0c121e; border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 14px;">
+              <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px;">
+                <span id="uploadProgressLabel" style="font-weight: 600; color: #fff;">Uploading folder...</span>
+                <span id="uploadProgressPercent" style="color: var(--accent-primary); font-family: monospace;">0%</span>
+              </div>
+              <div style="height: 6px; width: 100%; background: #1e293b; border-radius: 3px; overflow: hidden;">
+                <div id="uploadProgressBar" style="height: 100%; width: 0%; background: var(--accent-primary); transition: width 0.2s ease;"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Dataset Thumbnail Gallery -->
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title">Dataset Image Gallery</h3>
+            </div>
+            <div id="datasetGallery" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 12px;"></div>
+          </div>
+        </section>
+
+        <!-- TAB 4: ANNOTATIONS -->
+        <section id="view-annotations" class="tab-view" style="display: none;">
+          <div class="annotator-wrapper">
+            <!-- Sidebar Controls -->
+            <div class="annotator-sidebar">
+              <div style="padding: 14px; border-bottom: 1px solid var(--border-color);">
+                <div style="font-weight: 600; font-size: 14px; color: #fff; margin-bottom: 6px;" id="annotImageName">No image</div>
+                <div style="display: flex; gap: 8px;">
+                  <button class="btn btn-sm btn-secondary" style="flex:1;" onclick="annotatorPrev()">Previous</button>
+                  <button class="btn btn-sm btn-secondary" style="flex:1;" onclick="annotatorNext()">Next</button>
+                </div>
+              </div>
+
+              <div style="padding: 14px; flex: 1; overflow-y: auto;">
+                <div class="form-label">Active Class</div>
+                <div id="classSelectorPills" style="display: flex; flex-direction: column; gap: 6px;"></div>
+              </div>
+
+              <div style="padding: 14px; border-top: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 8px;">
+                <button class="btn btn-primary" onclick="saveCurrentAnnotations()">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                  Save Annotations
+                </button>
+                <div style="font-size: 11px; color: var(--text-sub); line-height: 1.4;">
+                  <strong>Shortcuts:</strong><br>
+                  • Click + Drag to draw box<br>
+                  • Del/Backspace to delete box<br>
+                  • Space + Drag to pan<br>
+                  • Mouse Wheel to zoom
+                </div>
+              </div>
+            </div>
+
+            <!-- Canvas Viewport -->
+            <div class="annotator-viewport">
+              <canvas id="annotationCanvas"></canvas>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 5: TRAINING -->
+        <section id="view-training" class="tab-view" style="display: none;">
+          <div style="display: grid; grid-template-columns: 340px 1fr; gap: 20px;">
+            <!-- Training Setup Form -->
+            <div class="card" style="height: fit-content;">
+              <h2 class="card-title" style="margin-bottom: 16px;">Training Configuration</h2>
+              
+              <div class="form-group">
+                <label class="form-label">Target Dataset</label>
+                <select id="trainDatasetSelect" class="form-select"></select>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Model Architecture</label>
+                <select id="trainArchSelect" class="form-select"></select>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Experiment / Model Name</label>
+                <input id="trainModelName" class="form-input" placeholder="e.g. yolo11_experiment_1" />
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <div class="form-group">
+                  <label class="form-label">Epochs</label>
+                  <input id="trainEpochs" type="number" class="form-input" value="20" min="1" max="1000" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Batch Size</label>
+                  <input id="trainBatchSize" type="number" class="form-input" value="8" min="1" max="128" />
+                </div>
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <div class="form-group">
+                  <label class="form-label">Learning Rate</label>
+                  <input id="trainLr" type="number" step="0.0001" class="form-input" value="0.001" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Device</label>
+                  <select id="trainDevice" class="form-select">
+                    <option value="auto">Auto Detect</option>
+                    <option value="cuda">CUDA GPU</option>
+                    <option value="cpu">CPU Only</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style="display: flex; gap: 10px; margin-top: 10px;">
+                <button id="btnStartTraining" class="btn btn-primary" style="flex:1;" onclick="startTrainingJob()">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                  Start Training
+                </button>
+                <button id="btnStopTraining" class="btn btn-danger" disabled onclick="stopTrainingJob()">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="6" width="12" height="12"></rect></svg>
+                  Stop
+                </button>
+              </div>
+            </div>
+
+            <!-- Live Monitoring Dashboard -->
+            <div>
+              <div class="card">
+                <div class="card-header">
+                  <h3 class="card-title">Live Training Progress</h3>
+                  <span id="trainEpochProgress" style="font-weight: 600; color: var(--accent-primary);">Ready</span>
+                </div>
+                <!-- Progress Bar -->
+                <div style="height: 6px; width: 100%; background: #1e293b; border-radius: 3px; overflow: hidden; margin-bottom: 20px;">
+                  <div id="trainProgressBar" style="height: 100%; width: 0%; background: linear-gradient(90deg, #6366f1, #10b981); transition: width 0.3s ease;"></div>
+                </div>
+
+                <!-- Real-time SVG Charts -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                  <div id="chartLoss"></div>
+                  <div id="chartMetric"></div>
+                </div>
+              </div>
+
+              <!-- Realtime Terminal Logs -->
+              <div class="card">
+                <div class="card-header">
+                  <h3 class="card-title">Training Process Logs</h3>
+                </div>
+                <div id="terminalLogs" class="terminal-window">System idle. Launch a training job to stream real-time logs.</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 6: MODELS -->
+        <section id="view-models" class="tab-view" style="display: none;">
+          <div id="modelsGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px;"></div>
+        </section>
+
+        <!-- TAB 7: INFERENCE PLAYGROUND -->
+        <section id="view-inference" class="tab-view" style="display: none;">
+          <div style="display: grid; grid-template-columns: 340px 1fr; gap: 20px;">
+            <!-- Control Panel -->
+            <div class="card" style="height: fit-content;">
+              <h2 class="card-title" style="margin-bottom: 16px;">Model Inference Tester</h2>
+              
+              <div class="form-group">
+                <label class="form-label">Select Model</label>
+                <select id="inferModelSelect" class="form-select"></select>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Upload Test Image</label>
+                <input id="inferFileInput" type="file" accept="image/*" class="form-input" />
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Confidence Threshold (<span id="confVal">0.25</span>)</label>
+                <input id="inferConfSlider" type="range" min="0.05" max="0.95" step="0.05" value="0.25" class="form-input" oninput="document.getElementById('confVal').textContent = this.value" />
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">IoU NMS Threshold (<span id="iouVal">0.45</span>)</label>
+                <input id="inferIouSlider" type="range" min="0.1" max="0.9" step="0.05" value="0.45" class="form-input" oninput="document.getElementById('iouVal').textContent = this.value" />
+              </div>
+
+              <button class="btn btn-primary" style="width: 100%; margin-top: 10px;" onclick="runInference()">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="22" y1="12" x2="18" y2="12"></line><line x1="6" y1="12" x2="2" y2="12"></line><line x1="12" y1="6" x2="12" y2="2"></line><line x1="12" y1="22" x2="12" y2="18"></line></svg>
+                Run Detection
+              </button>
+            </div>
+
+            <!-- Visualization Result -->
+            <div class="card">
+              <div class="card-header">
+                <h3 class="card-title">Detection Result</h3>
+                <div style="display: flex; gap: 12px; align-items: center;">
+                  <span id="inferStats" style="font-size: 12px; color: var(--text-muted);">No detection run yet</span>
+                  <a id="inferDownloadBtn" class="btn btn-sm btn-secondary" style="display: none;" download>Download Result Image</a>
+                </div>
+              </div>
+
+              <div style="background: #000; border-radius: 8px; overflow: hidden; min-height: 350px; display: flex; align-items: center; justify-content: center; margin-bottom: 16px;">
+                <img id="inferResultImg" style="max-width: 100%; max-height: 500px; display: block;" />
+              </div>
+
+              <!-- Detections Table -->
+              <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                <thead>
+                  <tr style="border-bottom: 1px solid var(--border-color); text-align: left; color: var(--text-sub);">
+                    <th style="padding: 8px 0;">Class</th>
+                    <th>Confidence</th>
+                    <th>Bounding Box [x1, y1, x2, y2]</th>
+                  </tr>
+                </thead>
+                <tbody id="inferTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 8: SYSTEM -->
+        <section id="view-system" class="tab-view" style="display: none;">
+          <div class="card">
+            <h2 class="card-title" style="margin-bottom: 16px;">Environment & Compute Stack</h2>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
+              <div>
+                <div class="form-label">Python Version</div>
+                <div id="sysPython" style="font-weight: 600; color: #fff;">-</div>
+              </div>
+              <div>
+                <div class="form-label">PyTorch Version</div>
+                <div id="sysTorch" style="font-weight: 600; color: #fff;">-</div>
+              </div>
+              <div>
+                <div class="form-label">CUDA Acceleration</div>
+                <div id="sysCuda" style="font-weight: 600; color: #fff;">-</div>
+              </div>
+              <div>
+                <div class="form-label">CPU Cores</div>
+                <div id="sysCpuCount" style="font-weight: 600; color: #fff;">-</div>
+              </div>
+              <div>
+                <div class="form-label">Memory (RAM)</div>
+                <div id="sysRam" style="font-weight: 600; color: #fff;">-</div>
+              </div>
+            </div>
+
+            <h3 class="card-title" style="margin-bottom: 12px;">Detected GPUs</h3>
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+              <thead>
+                <tr style="border-bottom: 1px solid var(--border-color); text-align: left; color: var(--text-sub);">
+                  <th style="padding: 8px 0;">GPU ID</th>
+                  <th>Model Name</th>
+                  <th>Total VRAM</th>
+                  <th>Multiprocessors</th>
+                </tr>
+              </thead>
+              <tbody id="sysGpuTable"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <!-- MODALS -->
+  <div id="modalNewProject" class="modal-overlay">
+    <div class="modal-content">
+      <div class="card-header">
+        <h3 class="card-title">Create New Project</h3>
+        <button class="btn btn-sm btn-secondary" onclick="closeModal('modalNewProject')">✕</button>
+      </div>
+      <form onsubmit="handleCreateProject(event)">
+        <div class="form-group">
+          <label class="form-label">Project Name</label>
+          <input id="newProjName" class="form-input" required placeholder="e.g. Wildlife Detection" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Task Type</label>
+          <select id="newProjTask" class="form-select">
+            <option value="detection">Object Detection (Bounding Boxes)</option>
+            <option value="classification">Image Classification</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Description</label>
+          <textarea id="newProjDesc" class="form-textarea" rows="3"></textarea>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 8px;">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modalNewProject')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create Project</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modalNewDataset" class="modal-overlay">
+    <div class="modal-content">
+      <div class="card-header">
+        <h3 class="card-title">Create New Dataset</h3>
+        <button class="btn btn-sm btn-secondary" onclick="closeModal('modalNewDataset')">✕</button>
+      </div>
+      <form onsubmit="handleCreateDataset(event)">
+        <div class="form-group">
+          <label class="form-label">Dataset Name</label>
+          <input id="newDsName" class="form-input" required placeholder="e.g. animal_dataset" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Classes (Comma-separated)</label>
+          <input id="newDsClasses" class="form-input" required placeholder="e.g. cat, dog, bird" />
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 8px;">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modalNewDataset')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create Dataset</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modalSplitDataset" class="modal-overlay">
+    <div class="modal-content">
+      <div class="card-header">
+        <h3 class="card-title">Auto-Split Dataset (Train / Val / Test)</h3>
+        <button class="btn btn-sm btn-secondary" onclick="closeModal('modalSplitDataset')">✕</button>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Train Ratio (Default 70%)</label>
+        <input id="splitTrainRatio" type="number" class="form-input" value="0.70" step="0.05" min="0.1" max="0.9" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Validation Ratio (Default 20%)</label>
+        <input id="splitValRatio" type="number" class="form-input" value="0.20" step="0.05" min="0.05" max="0.5" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Test Ratio (Default 10%)</label>
+        <input id="splitTestRatio" type="number" class="form-input" value="0.10" step="0.05" min="0.0" max="0.4" />
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button class="btn btn-secondary" onclick="closeModal('modalSplitDataset')">Cancel</button>
+        <button class="btn btn-primary" onclick="handleSplitDataset()">Apply Stratified Split</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modalImportFolder" class="modal-overlay">
+    <div class="modal-content">
+      <div class="card-header">
+        <h3 class="card-title">Import Folder from Server Disk</h3>
+        <button class="btn btn-sm btn-secondary" onclick="closeModal('modalImportFolder')">✕</button>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Server Absolute Folder Path</label>
+        <input id="importFolderPath" class="form-input" placeholder="C:/path/to/my_images" />
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button class="btn btn-secondary" onclick="closeModal('modalImportFolder')">Cancel</button>
+        <button class="btn btn-primary" onclick="handleImportFolder()">Scan & Import</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div id="toastContainer"></div>
+
+  <!-- Modal Helpers -->
+  <script>
+    function openModal(id) { document.getElementById(id).classList.add("open"); }
+    function closeModal(id) { document.getElementById(id).classList.remove("open"); }
+
+    async function handleCreateProject(e) {
+      e.preventDefault();
+      try {
+        const name = document.getElementById("newProjName").value.trim();
+        const task_type = document.getElementById("newProjTask").value;
+        const description = document.getElementById("newProjDesc").value.trim();
+        const p = await api.createProject({ name, task_type, description });
+        showToast("Project created!", "success");
+        closeModal("modalNewProject");
+        setActiveProject(p);
+        loadProjectsView();
+      } catch (err) {
+        showToast(err.message, "error");
+      }
+    }
+
+    async function handleCreateDataset(e) {
+      e.preventDefault();
+      if (!state.activeProject) return showToast("Select a project first", "error");
+      try {
+        const name = document.getElementById("newDsName").value.trim();
+        const rawClasses = document.getElementById("newDsClasses").value.split(",").map(c => c.trim()).filter(Boolean);
+        await api.createDataset({ project_id: state.activeProject.id, name, classes: rawClasses });
+        showToast("Dataset created!", "success");
+        closeModal("modalNewDataset");
+        loadDatasetsView();
+      } catch (err) {
+        showToast(err.message, "error");
+      }
+    }
+
+    async function triggerDatasetValidation() {
+      if (!state.activeDataset) return;
+      showToast("Validating dataset integrity...", "info");
+      try {
+        const report = await api.validateDataset(state.activeDataset.id);
+        if (report.is_valid) {
+          showToast(`Validation Passed! (${report.total_images} images, ${report.total_annotations} boxes)`, "success");
+        } else {
+          showToast(`Validation Failed: ${report.errors.length} errors found.`, "error");
+        }
+      } catch (err) {
+        showToast(err.message, "error");
+      }
+    }
+
+    async function handleSplitDataset() {
+      if (!state.activeDataset) return;
+      const train = parseFloat(document.getElementById("splitTrainRatio").value);
+      const val = parseFloat(document.getElementById("splitValRatio").value);
+      const test = parseFloat(document.getElementById("splitTestRatio").value);
+      try {
+        const res = await api.splitDataset(state.activeDataset.id, { train_ratio: train, val_ratio: val, test_ratio: test });
+        showToast(`Dataset split complete! Train: ${res.splits.train}, Val: ${res.splits.val}, Test: ${res.splits.test}`, "success");
+        closeModal("modalSplitDataset");
+        loadDatasetDetails(state.activeDataset.id);
+      } catch (err) {
+        showToast(err.message, "error");
+      }
+    }
+
+    async function handleImportFolder() {
+      if (!state.activeDataset) return;
+      const folder = document.getElementById("importFolderPath").value.trim();
+      if (!folder) return;
+      showToast("Importing images from server folder...", "info");
+      try {
+        const res = await api.importFolder(state.activeDataset.id, folder);
+        showToast(`Imported ${res.imported_images} images and ${res.imported_annotations} annotations!`, "success");
+        closeModal("modalImportFolder");
+        loadDatasetDetails(state.activeDataset.id);
+      } catch (err) {
+        showToast(err.message, "error");
+      }
+    }
+  </script>
+
+  <!-- App Scripts -->
+  <script src="/static/js/api.js"></script>
+  <script src="/static/js/charts.js"></script>
+  <script src="/static/js/annotator.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

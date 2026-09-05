@@ -1,0 +1,36 @@
+# Training Hyperparameter Configuration Template
+project_name: "animal_detection"
+experiment_name: "yolo11n_baseline"
+task_type: "detection" # detection | classification
+architecture: "yolo11n" # yolo11n | yolo11s | resnet18 | mobilenet_v3
+
+dataset:
+  path: "./data/datasets/animal_dataset/dataset.yaml"
+  image_size: 640
+  batch_size: 8
+  num_workers: 2
+
+hyperparameters:
+  epochs: 50
+  learning_rate: 0.001
+  optimizer: "AdamW" # AdamW | SGD | Adam
+  weight_decay: 0.0005
+  scheduler: "cosine" # cosine | linear | step
+  warmup_epochs: 3
+  early_stopping_patience: 10
+  checkpoint_interval: 5
+
+augmentation:
+  enabled: true
+  horizontal_flip: 0.5
+  vertical_flip: 0.0
+  rotation: 15
+  random_crop: 0.1
+  brightness_contrast: 0.2
+  color_jitter: 0.2
+  blur: 0.0
+
+compute:
+  device: "auto" # auto | cuda | cpu
+  seed: 42
+  deterministic: true

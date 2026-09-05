@@ -1,0 +1,43 @@
+app:
+  title: "AI Vision Training Studio"
+  version: "1.0.0"
+  description: "Production Computer Vision Training Platform"
+  env: "development"
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+  reload: false
+
+storage:
+  backend: "local"
+  base_dir: "./data"
+  upload_dir: "./data/uploads"
+  dataset_dir: "./data/datasets"
+  runs_dir: "./data/runs"
+  models_dir: "./data/models"
+
+security:
+  max_upload_size_mb: 500
+  allowed_extensions:
+    - "jpg"
+    - "jpeg"
+    - "png"
+    - "webp"
+    - "bmp"
+    - "tiff"
+    - "tif"
+
+database:
+  url: "sqlite+aiosqlite:///./data/studio.db"
+  echo: false
+
+training:
+  default_device: "auto"
+  supported_tasks:
+    - "detection"
+    - "classification"
+  default_split:
+    train: 0.70
+    val: 0.20
+    test: 0.10

@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-vision-studio"
+version = "1.0.0"
+description = "Production-grade AI Vision Training Platform for Object Detection and Classification"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "AI Vision Studio Team" }]
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.28.0",
+    "pydantic>=2.6.0",
+    "pydantic-settings>=2.2.0",
+    "sqlalchemy>=2.0.25",
+    "aiosqlite>=0.20.0",
+    "torch>=2.1.0",
+    "torchvision>=0.16.0",
+    "ultralytics>=8.1.0",
+    "opencv-python-headless>=4.9.0",
+    "pillow>=10.2.0",
+    "numpy>=1.26.0",
+    "pyyaml>=6.0.1",
+    "python-multipart>=0.0.9",
+    "psutil>=5.9.0",
+    "albumentations>=1.4.0",
+    "scikit-learn>=1.4.0",
+    "onnx>=1.15.0",
+    "onnxruntime>=1.17.0",
+    "websockets>=12.0",
+    "httpx>=0.27.0",
+]
+
+[project.scripts]
+ai-vision-studio = "app.cli:cli_entrypoint"
