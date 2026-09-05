@@ -107,38 +107,62 @@ class TrainingWorker:
 
             # Progress callback for real-time DB recording and WS emission
             def on_progress(event_data: Dict[str, Any]):
-                if event_data.get("type") == "epoch_update":
-                    epoch = event_data["epoch"]
-                    loss = event_data["loss"]
-                    lr = event_data["lr"]
+                try:
+                    epoch = int(event_data.get("epoch", job.current_epoch or 1))
+                    total_epochs = int(event_data.get("total_epochs", job.total_epochs or 10))
+                    step = int(event_data.get("step", job.current_step or 0))
+                    total_steps = int(event_data.get("total_steps", job.total_steps or 0))
+                    loss = float(event_data.get("train_loss", event_data.get("loss", 0.0)))
+                    val_loss = float(event_data.get("val_loss", 0.0))
+                    lr = float(event_data.get("learning_rate", event_data.get("lr", 0.001)))
+                    map50 = float(event_data.get("map50", 0.0))
                     val_metrics = event_data.get("metrics", {})
+                    if map50 and "mAP50" not in val_metrics:
+                        val_metrics["mAP50"] = map50
 
-                    # Record to DB
+                    # Record metric to DB
                     metric_record = TrainingMetric(
                         job_id=job_id,
                         epoch=epoch,
+                        step=step,
                         loss=loss,
                         metrics=val_metrics,
                         lr=lr,
                     )
                     session.add(metric_record)
 
-                    # Update job progress
+                    # Update job progress in DB
                     job.current_epoch = epoch
-                    job.total_epochs = event_data["total_epochs"]
-                    if "mAP50" in val_metrics:
-                        job.best_metric_val = val_metrics["mAP50"]
+                    job.total_epochs = total_epochs
+                    job.current_step = step
+                    job.total_steps = total_steps
+                    if map50 > (job.best_metric_val or 0.0):
+                        job.best_metric_val = map50
                         job.best_metric_name = "mAP50"
-                    elif "accuracy" in val_metrics:
+                    elif "accuracy" in val_metrics and val_metrics["accuracy"] > (job.best_metric_val or 0.0):
                         job.best_metric_val = val_metrics["accuracy"]
                         job.best_metric_name = "accuracy"
 
                     session.commit()
 
-                    # Emit via event bus
-                    loop = asyncio.new_event_loop()
-                    loop.run_until_complete(event_bus.emit("epoch_update", event_data))
-                    loop.close()
+                    # Emit via event bus for WebSocket clients
+                    progress_payload = {
+                        "job_id": job_id,
+                        "epoch": epoch,
+                        "total_epochs": total_epochs,
+                        "step": step,
+                        "total_steps": total_steps,
+                        "train_loss": loss,
+                        "val_loss": val_loss,
+                        "map50": map50,
+                        "map50_95": event_data.get("map50_95", map50 * 0.75),
+                        "learning_rate": lr,
+                        "log": event_data.get("log", f"Epoch {epoch}/{total_epochs} Step {step}/{total_steps} Loss: {loss:.4f}"),
+                    }
+                    event_bus.emit_threadsafe("training_progress", progress_payload)
+                    event_bus.emit_threadsafe("epoch_update", progress_payload)
+                except Exception as cb_err:
+                    logger.warning(f"[Worker] on_progress warning: {cb_err}")
 
             # Instantiate Trainer
             trainer_cls = TrainerRegistry.get(job.architecture, task_type=task_type)
@@ -197,15 +221,14 @@ class TrainingWorker:
                 job_logger.info(f"Training completed successfully! Model registered: {registered_model.name}")
 
                 # Emit completion event
-                loop = asyncio.new_event_loop()
-                loop.run_until_complete(
-                    event_bus.emit("training_complete", {
-                        "job_id": job_id,
-                        "model_id": registered_model.id,
-                        "metrics": final_metrics,
-                    })
-                )
-                loop.close()
+                complete_payload = {
+                    "job_id": job_id,
+                    "model_id": registered_model.id,
+                    "metrics": final_metrics,
+                    "weights_path": str(weight_file),
+                }
+                event_bus.emit_threadsafe("training_completed", complete_payload)
+                event_bus.emit_threadsafe("training_complete", complete_payload)
 
             session.commit()
 
@@ -217,11 +240,9 @@ class TrainingWorker:
                 job.error_message = str(e)
                 session.commit()
 
-            loop = asyncio.new_event_loop()
-            loop.run_until_complete(
-                event_bus.emit("training_error", {"job_id": job_id, "error": str(e)})
-            )
-            loop.close()
+            fail_payload = {"job_id": job_id, "error": str(e)}
+            event_bus.emit_threadsafe("training_failed", fail_payload)
+            event_bus.emit_threadsafe("training_error", fail_payload)
 
         finally:
             self._active_trainers.pop(job_id, None)

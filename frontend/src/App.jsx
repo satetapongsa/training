@@ -60,6 +60,13 @@ export default function App() {
     setActiveTab('training');
   };
 
+  const handleProceedToInference = (model) => {
+    if (model) {
+      setPreselectedModel(model);
+    }
+    setActiveTab('inference');
+  };
+
   return (
     <div className="app-container">
       <Sidebar
@@ -86,6 +93,8 @@ export default function App() {
               onTrainingCompleted={() => {
                 getTrainingRuns().then((list) => setModels(list || []));
               }}
+              onNavigateToInference={handleProceedToInference}
+              onRefreshDatasets={loadAllData}
             />
           )}
 

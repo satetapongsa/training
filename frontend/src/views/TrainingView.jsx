@@ -14,6 +14,9 @@ import {
   ShieldCheck,
   Check,
   Folder,
+  Archive,
+  Upload,
+  ArrowRight,
 } from 'lucide-react';
 import {
   startTraining,
@@ -23,6 +26,7 @@ import {
   cancelActiveTraining,
   getActiveTrainingJob,
   getJobWeightDownloadUrl,
+  uploadDatasetZip,
   getWsUrl,
 } from '../api/client';
 
@@ -31,6 +35,8 @@ export default function TrainingView({
   datasets = [],
   activeDataset,
   onTrainingCompleted,
+  onNavigateToInference,
+  onRefreshDatasets,
 }) {
   const [selectedDatasetId, setSelectedDatasetId] = useState(activeDataset?.id || '');
   const [modelType, setModelType] = useState('kdel4');
@@ -64,6 +70,11 @@ export default function TrainingView({
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [etaSeconds, setEtaSeconds] = useState(null);
 
+  // ZIP upload state for dataset with GT
+  const [isUploadingZip, setIsUploadingZip] = useState(false);
+  const [zipUploadMessage, setZipUploadMessage] = useState(null);
+  const zipUploadRef = useRef(null);
+
   const logConsoleRef = useRef(null);
   const wsRef = useRef(null);
   const pollIntervalRef = useRef(null);
@@ -77,6 +88,55 @@ export default function TrainingView({
       setSelectedDatasetId(datasets[0].id);
     }
   }, [activeDataset, datasets]);
+
+  // Robust Polling function that continuously updates live metrics
+  const startPolling = (jobId) => {
+    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    pollIntervalRef.current = setInterval(async () => {
+      try {
+        const status = await getTrainingStatus(jobId);
+        if (status) {
+          setMetrics((prev) => {
+            const ep = status.current_epoch !== undefined && status.current_epoch !== null ? status.current_epoch : prev.epoch;
+            const totEp = status.total_epochs || prev.total_epochs;
+            const st = status.current_step !== undefined && status.current_step !== null ? status.current_step : prev.step;
+            const totSt = status.total_steps || prev.total_steps;
+            const map = status.best_metric_val !== null && status.best_metric_val !== undefined ? status.best_metric_val : prev.map50;
+            let lastLoss = prev.train_loss;
+            if (status.recent_metrics && status.recent_metrics.length > 0) {
+              const latest = status.recent_metrics[status.recent_metrics.length - 1];
+              if (latest.loss !== undefined && latest.loss !== null) lastLoss = latest.loss;
+            }
+            return {
+              ...prev,
+              epoch: ep,
+              total_epochs: totEp,
+              step: st,
+              total_steps: totSt,
+              train_loss: lastLoss,
+              map50: map,
+              map50_95: map * 0.75,
+            };
+          });
+
+          if (status.status === 'completed') {
+            setIsTraining(false);
+            setIsCompleted(true);
+            setEtaSeconds(0);
+            clearInterval(pollIntervalRef.current);
+            appendLog('สถานะการเทรน: เสร็จสมบูรณ์ 100% (COMPLETED) บันทึกไฟล์โมเดล best.pt เรียบร้อย');
+            if (onTrainingCompleted) onTrainingCompleted();
+          } else if (status.status === 'failed') {
+            setIsTraining(false);
+            clearInterval(pollIntervalRef.current);
+            appendLog(`สถานะการเทรน: ล้มเหลว (${status.error_message || ''})`);
+          }
+        }
+      } catch (err) {
+        // ignore poll error
+      }
+    }, 1500);
+  };
 
   // Initial check: inspect active jobs on server
   useEffect(() => {
@@ -98,9 +158,43 @@ export default function TrainingView({
           map50: job.best_metric_val || prev.map50,
         }));
         appendLog(`ตรวจพบงานเทรนโมเดลที่กำลังทำงานอยู่ในระบบ (Job ID: ${job.id}, สถาปัตยกรรม: ${job.architecture})`);
+        startPolling(job.id);
       }
     } catch (e) {
       // ignore
+    }
+  };
+
+  // Handle uploading ZIP containing images and Ground Truth
+  const handleUploadZipDataset = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploadingZip(true);
+    setZipUploadMessage('กำลังอัปโหลดและแตกไฟล์ ZIP บนระบบ...');
+    appendLog(`กำลังอัปโหลดไฟล์ ZIP ชุดข้อมูล: ${file.name}...`);
+
+    try {
+      const res = await uploadDatasetZip(file);
+      setIsUploadingZip(false);
+      if (res && res.dataset) {
+        setSelectedDatasetId(res.dataset.id);
+        const msg = `อัปโหลดสำเร็จ: พบรูปภาพ ${res.uploaded_count} รูป, ป้ายกำกับ GT ${res.imported_annotations} รายการ พร้อมเริ่มเทรนได้ทันที!`;
+        setZipUploadMessage(msg);
+        appendLog(
+          `อัปโหลดสำเร็จ! สร้างชุดข้อมูล "${res.dataset_name}" (รูปภาพ ${res.uploaded_count} รูป, ป้ายกำกับ ${res.imported_annotations} รายการ) พร้อมเริ่มเทรนโมเดล`
+        );
+        if (onRefreshDatasets) {
+          onRefreshDatasets();
+        }
+      }
+    } catch (err) {
+      setIsUploadingZip(false);
+      setZipUploadMessage(`อัปโหลดล้มเหลว: ${err.message}`);
+      appendLog(`อัปโหลดไฟล์ ZIP ล้มเหลว: ${err.message}`);
+      alert(`อัปโหลดไฟล์ ZIP ล้มเหลว: ${err.message}`);
+    } finally {
+      if (e.target) e.target.value = '';
     }
   };
 
@@ -147,8 +241,14 @@ export default function TrainingView({
       ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
-          if (msg.type === 'training_progress') {
-            const data = msg.data;
+          const eventType = msg.type || msg.event;
+          const data = msg.data || msg;
+
+          if (
+            eventType === 'training_progress' ||
+            eventType === 'epoch_update' ||
+            eventType === 'step_update'
+          ) {
             setMetrics((prev) => ({
               ...prev,
               epoch: data.epoch !== undefined ? data.epoch : prev.epoch,
@@ -164,17 +264,17 @@ export default function TrainingView({
             if (data.log) {
               appendLog(data.log);
             }
-          } else if (msg.type === 'training_completed') {
+          } else if (eventType === 'training_completed' || eventType === 'training_complete') {
             setIsTraining(false);
             setIsCompleted(true);
             setActiveJobConflict(null);
             setEtaSeconds(0);
             appendLog('การเทรนเสร็จสมบูรณ์ 100%! บันทึกไฟล์โมเดล best.pt เรียบร้อยแล้ว');
             if (onTrainingCompleted) onTrainingCompleted();
-          } else if (msg.type === 'training_failed') {
+          } else if (eventType === 'training_failed' || eventType === 'training_error') {
             setIsTraining(false);
             setActiveJobConflict(null);
-            appendLog(`การเทรนเกิดข้อผิดพลาด: ${msg.data?.error || 'Unknown error'}`);
+            appendLog(`การเทรนเกิดข้อผิดพลาด: ${data?.error || 'Unknown error'}`);
           }
         } catch (e) {
           // ignore parsing error
@@ -262,27 +362,8 @@ export default function TrainingView({
       setActiveJobConflict(null);
       appendLog(`จัดคิวงานเทรนสำเร็จ (Run ID: ${run.id}, สถาปัตยกรรม: ${modelType})`);
 
-      // Fallback status polling
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-      pollIntervalRef.current = setInterval(async () => {
-        try {
-          const status = await getTrainingStatus(run.id);
-          if (status.status === 'completed') {
-            setIsTraining(false);
-            setIsCompleted(true);
-            setEtaSeconds(0);
-            clearInterval(pollIntervalRef.current);
-            appendLog('สถานะการเทรน: เสร็จสมบูรณ์ (COMPLETED)');
-            if (onTrainingCompleted) onTrainingCompleted();
-          } else if (status.status === 'failed') {
-            setIsTraining(false);
-            clearInterval(pollIntervalRef.current);
-            appendLog(`สถานะการเทรน: ล้มเหลว (${status.error_message || ''})`);
-          }
-        } catch (err) {
-          // ignore poll error
-        }
-      }, 3000);
+      // Start live metrics polling
+      startPolling(run.id);
     } catch (err) {
       setIsTraining(false);
       appendLog(`ไม่สามารถเริ่มการเทรนได้: ${err.message}`);
@@ -362,6 +443,60 @@ export default function TrainingView({
           <h3 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)' }}>
             ตั้งค่าการเทรนโมเดล
           </h3>
+        </div>
+
+        {/* Hidden File Input for ZIP Upload */}
+        <input
+          type="file"
+          ref={zipUploadRef}
+          accept=".zip"
+          style={{ display: 'none' }}
+          onChange={handleUploadZipDataset}
+        />
+
+        {/* Dedicated Ground Truth ZIP Upload Box */}
+        <div
+          style={{
+            padding: '12px 14px',
+            backgroundColor: '#f0fdf4',
+            border: '1px dashed #86efac',
+            borderRadius: 'var(--radius-md)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 700, color: '#166534' }}>
+              <Archive size={16} color="#16a34a" />
+              อัปโหลดไฟล์ ZIP ที่มี GT เพื่อเทรน
+            </div>
+            <button
+              className="btn btn-sm btn-primary"
+              style={{ fontSize: '11px', padding: '5px 10px', background: '#16a34a', border: 'none' }}
+              onClick={() => zipUploadRef.current?.click()}
+              disabled={isUploadingZip || isTraining}
+            >
+              <Upload size={12} /> {isUploadingZip ? 'กำลังอัปโหลด...' : 'เลือกไฟล์ .ZIP'}
+            </button>
+          </div>
+          <p style={{ fontSize: '11px', color: '#15803d', margin: 0, lineHeight: 1.4 }}>
+            อัปโหลดไฟล์ .ZIP ที่บรรจุรูปภาพพร้อมไฟล์ Ground Truth (.txt) ที่บันทึกมาจากหน้าครอบรูป เพื่อนำมาเทรนโมเดลได้ทันที
+          </p>
+          {zipUploadMessage && (
+            <div
+              style={{
+                fontSize: '11px',
+                fontWeight: 600,
+                color: '#166534',
+                backgroundColor: '#dcfce7',
+                padding: '6px 10px',
+                borderRadius: '4px',
+              }}
+            >
+              {zipUploadMessage}
+            </div>
+          )}
         </div>
 
         {/* 1. Target Dataset / GT Folder Selector */}
@@ -737,30 +872,59 @@ export default function TrainingView({
           {/* 3. Direct Model Weight Download Button (Grey when training, Bright Green when finished) */}
           <div style={{ paddingTop: '6px' }}>
             {isCompleted ? (
-              <button
-                onClick={handleDownloadModel}
-                style={{
-                  width: '100%',
-                  padding: '14px 20px',
-                  borderRadius: 'var(--radius-md)',
-                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                  color: '#ffffff',
-                  border: 'none',
-                  fontSize: '15px',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '10px',
-                  boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)',
-                  transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-                }}
-                title="คลิกเพื่อดาวน์โหลดไฟล์น้ำหนักโมเดล best.pt ลงเครื่องคอมพิวเตอร์ของคุณได้ทันที"
-              >
-                <Download size={18} />
-                ดาวน์โหลดไฟล์โมเดลที่เทรนสมบูรณ์แล้ว (best.pt)
-              </button>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <button
+                  onClick={handleDownloadModel}
+                  style={{
+                    padding: '14px 18px',
+                    borderRadius: 'var(--radius-md)',
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    color: '#ffffff',
+                    border: 'none',
+                    fontSize: '14px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)',
+                    transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+                  }}
+                  title="คลิกเพื่อดาวน์โหลดไฟล์น้ำหนักโมเดล best.pt ลงเครื่องคอมพิวเตอร์ของคุณได้ทันที"
+                >
+                  <Download size={18} />
+                  ดาวน์โหลดไฟล์น้ำหนัก (best.pt)
+                </button>
+
+                <button
+                  onClick={() => {
+                    if (onNavigateToInference) {
+                      onNavigateToInference(currentRun);
+                    }
+                  }}
+                  style={{
+                    padding: '14px 18px',
+                    borderRadius: 'var(--radius-md)',
+                    background: 'linear-gradient(135deg, #4f46e5 0%, #4338ca 100%)',
+                    color: '#ffffff',
+                    border: 'none',
+                    fontSize: '14px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    boxShadow: '0 4px 14px rgba(79, 70, 229, 0.35)',
+                    transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+                  }}
+                  title="นำโมเดลที่ผ่านการเทรนสมบูรณ์แล้วนี้ไปทดสอบตรวจจับภาพจริงในหน้าทดสอบได้ทันที"
+                >
+                  <Zap size={18} />
+                  นำโมเดลไปทดสอบทันที <ArrowRight size={16} />
+                </button>
+              </div>
             ) : (
               <button
                 disabled

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import JSZip from 'jszip';
 import {
   FolderUp,
   Upload,
@@ -21,11 +22,15 @@ import {
   Pentagon,
   Undo2,
   X,
+  Archive,
+  FolderDown,
 } from 'lucide-react';
 import {
   createDataset,
   getDatasetImages,
   uploadFilesChunked,
+  uploadDatasetZip,
+  downloadDatasetZip,
   getAnnotations,
   saveAnnotations,
   splitDataset,
@@ -87,6 +92,7 @@ export default function StudioView({
   // DOM Refs
   const folderInputRef = useRef(null);
   const filesInputRef = useRef(null);
+  const zipInputRef = useRef(null);
   const canvasRef = useRef(null);
   const imageObjRef = useRef(null);
 
@@ -337,6 +343,182 @@ export default function StudioView({
       console.warn('Backend sync note:', err.message);
       setUploading(false);
       setUploadStatus('');
+    }
+  };
+
+  // --- ZIP ARCHIVE UPLOAD & CLIENT-SIDE UNPACKING ---
+  const handleZipSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    setUploadProgress(15);
+    setUploadStatus('กำลังอ่านและแตกไฟล์ ZIP บนเว็บ...');
+
+    try {
+      // 1. Unpack client-side with JSZip for immediate zero-lag display
+      const zip = await JSZip.loadAsync(file);
+      setUploadProgress(35);
+
+      // Check for classes.txt or dataset.yaml
+      const detectedClasses = [...classList];
+      for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
+        if (zipEntry.dir) continue;
+        const lower = relativePath.toLowerCase();
+        if (lower.endsWith('classes.txt')) {
+          try {
+            const txt = await zipEntry.async('text');
+            const lines = txt.split('\n').map((l) => l.trim()).filter(Boolean);
+            lines.forEach((c) => {
+              if (!detectedClasses.includes(c)) detectedClasses.push(c);
+            });
+          } catch (pe) {}
+        }
+      }
+      setClassList(detectedClasses);
+      if (detectedClasses.length > 0) setCurrentClass(detectedClasses[0]);
+
+      // Collect label text files
+      const labelMap = {};
+      for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
+        if (zipEntry.dir) continue;
+        const lower = relativePath.toLowerCase();
+        if (lower.endsWith('.txt') && !lower.endsWith('classes.txt')) {
+          const stem = relativePath.split('/').pop().replace(/\.[^/.]+$/, '').toLowerCase();
+          try {
+            labelMap[stem] = await zipEntry.async('text');
+          } catch (pe) {}
+        }
+      }
+
+      // Collect images
+      const imgExts = ['.jpg', '.jpeg', '.png', '.webp', '.bmp'];
+      const imageEntries = Object.entries(zip.files).filter(([path, entry]) => {
+        if (entry.dir) return false;
+        const lower = path.toLowerCase();
+        return imgExts.some((ext) => lower.endsWith(ext));
+      });
+
+      if (imageEntries.length === 0) {
+        alert('ไม่พบไฟล์รูปภาพ (.jpg, .png, .webp, .bmp) ในไฟล์ ZIP นี้');
+        setUploading(false);
+        return;
+      }
+
+      setUploadProgress(60);
+      setUploadStatus(`พบรูปภาพ ${imageEntries.length} รูป กำลังจัดเตรียมภาพ...`);
+
+      const loadedImages = [];
+      for (let i = 0; i < imageEntries.length; i++) {
+        const [path, entry] = imageEntries[i];
+        const rawFilename = path.split('/').pop();
+        const stem = rawFilename.replace(/\.[^/.]+$/, '').toLowerCase();
+        const blob = await entry.async('blob');
+        const localUrl = URL.createObjectURL(blob);
+        const fileObj = new File([blob], rawFilename, { type: blob.type });
+
+        let parsedAnnots = [];
+        if (labelMap[stem]) {
+          const lines = labelMap[stem].split('\n');
+          for (const line of lines) {
+            const parts = line.trim().split(/\s+/);
+            if (parts.length >= 5) {
+              const cid = parseInt(parts[0], 10);
+              const cname = detectedClasses[cid] || `class_${cid}`;
+              if (parts.length === 5) {
+                const cx = parseFloat(parts[1]);
+                const cy = parseFloat(parts[2]);
+                const w = parseFloat(parts[3]);
+                const h = parseFloat(parts[4]);
+                if (!isNaN(cx) && !isNaN(cy) && !isNaN(w) && !isNaN(h)) {
+                  parsedAnnots.push({
+                    id: Math.random().toString(),
+                    label: cname,
+                    x_min: Math.max(0, cx - w / 2),
+                    y_min: Math.max(0, cy - h / 2),
+                    x_max: Math.min(1, cx + w / 2),
+                    y_max: Math.min(1, cy + h / 2),
+                    segmentation: null,
+                  });
+                }
+              } else {
+                const coords = parts.slice(1).map(Number);
+                const xs = coords.filter((_, idx) => idx % 2 === 0);
+                const ys = coords.filter((_, idx) => idx % 2 === 1);
+                if (xs.length >= 3 && ys.length >= 3) {
+                  const minX = Math.min(...xs);
+                  const maxX = Math.max(...xs);
+                  const minY = Math.min(...ys);
+                  const maxY = Math.max(...ys);
+                  const seg = [];
+                  for (let k = 0; k < Math.min(xs.length, ys.length); k++) {
+                    seg.push([xs[k], ys[k]]);
+                  }
+                  parsedAnnots.push({
+                    id: Math.random().toString(),
+                    label: cname,
+                    x_min: Math.max(0, minX),
+                    y_min: Math.max(0, minY),
+                    x_max: Math.min(1, maxX),
+                    y_max: Math.min(1, maxY),
+                    segmentation: seg,
+                  });
+                }
+              }
+            }
+          }
+        }
+
+        loadedImages.push({
+          id: null,
+          filename: rawFilename,
+          localUrl,
+          fileHandle: fileObj,
+          annotations: parsedAnnots,
+          is_annotated: parsedAnnots.length > 0,
+        });
+      }
+
+      setImages(loadedImages);
+      setSelectedImageIndex(0);
+      setUploadProgress(80);
+      setUploadStatus('กำลังอัปโหลดและบันทึกชุดข้อมูลไปยังเซิร์ฟเวอร์...');
+
+      // 2. Upload zip to backend for database persistence and server-side YOLO manifest
+      try {
+        const uploadRes = await uploadDatasetZip(file);
+        if (uploadRes && uploadRes.dataset) {
+          if (setActiveDataset) setActiveDataset(uploadRes.dataset);
+          if (uploadRes.uploaded && uploadRes.uploaded.length > 0) {
+            const idMap = new Map();
+            uploadRes.uploaded.forEach((u) => idMap.set(u.filename, u.id));
+            setImages((prev) =>
+              prev.map((img) => ({
+                ...img,
+                id: idMap.get(img.filename) || img.id,
+                dataset_id: uploadRes.dataset.id,
+              }))
+            );
+          }
+        }
+      } catch (beErr) {
+        console.warn('Backend zip upload note:', beErr.message);
+      }
+
+      setUploadProgress(100);
+      setUploadStatus(`นำเข้ารูปภาพจากไฟล์ ZIP สำเร็จทั้งหมด ${loadedImages.length} รูป!`);
+      setTimeout(() => {
+        setUploading(false);
+        setUploadProgress(0);
+        setUploadStatus('');
+      }, 1500);
+    } catch (err) {
+      alert(`ไม่สามารถแตกไฟล์ ZIP ได้: ${err.message}`);
+      setUploading(false);
+      setUploadProgress(0);
+      setUploadStatus('');
+    } finally {
+      if (e.target) e.target.value = '';
     }
   };
 
@@ -827,6 +1009,93 @@ export default function StudioView({
     URL.revokeObjectURL(url);
   };
 
+  // --- DOWNLOAD ENTIRE DATASET + GT AS ZIP TO PC ---
+  const handleDownloadAllGtZip = async () => {
+    if (images.length === 0) {
+      alert('ไม่มีรูปภาพสำหรับบันทึกและดาวน์โหลด');
+      return;
+    }
+
+    setSavingGt(true);
+    try {
+      const zip = new JSZip();
+
+      // 1. classes.txt
+      const classesContent = classList.join('\n') + '\n';
+      zip.file('classes.txt', classesContent);
+
+      // 2. dataset.yaml
+      const yamlContent = `path: ./
+train: images
+val: images
+names:
+${classList.map((c, i) => `  ${i}: ${c}`).join('\n')}
+nc: ${classList.length}
+`;
+      zip.file('dataset.yaml', yamlContent);
+
+      // 3. Add images/ and labels/
+      for (let i = 0; i < images.length; i++) {
+        const img = images[i];
+        const rawName = img.filename || `image_${i + 1}.jpg`;
+        const stem = rawName.replace(/\.[^/.]+$/, '');
+
+        // Fetch image blob
+        let imgBlob = img.fileHandle;
+        if (!imgBlob && img.localUrl) {
+          try {
+            const resp = await fetch(img.localUrl);
+            imgBlob = await resp.blob();
+          } catch (e) {}
+        } else if (!imgBlob && img.id) {
+          try {
+            const resp = await fetch(`${API_BASE_URL}/api/v1/datasets/images/${img.id}/file`);
+            imgBlob = await resp.blob();
+          } catch (e) {}
+        }
+
+        if (imgBlob) {
+          zip.file(`images/${rawName}`, imgBlob);
+        }
+
+        // Generate GT txt lines
+        const imgAnnots = (i === selectedImageIndex ? annotations : img.annotations) || [];
+        const lines = imgAnnots.map((ann) => {
+          const classId = getClassId(ann.label);
+          if (ann.segmentation && ann.segmentation.length >= 3) {
+            const segStr = ann.segmentation.map((pt) => `${pt[0].toFixed(6)} ${pt[1].toFixed(6)}`).join(' ');
+            return `${classId} ${segStr}`;
+          }
+          const cx = (ann.x_min + ann.x_max) / 2;
+          const cy = (ann.y_min + ann.y_max) / 2;
+          const w = ann.x_max - ann.x_min;
+          const h = ann.y_max - ann.y_min;
+          return `${classId} ${cx.toFixed(6)} ${cy.toFixed(6)} ${w.toFixed(6)} ${h.toFixed(6)}`;
+        });
+
+        zip.file(`labels/${stem}.txt`, lines.join('\n') + (lines.length ? '\n' : ''));
+      }
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const downloadUrl = URL.createObjectURL(zipBlob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      const safeName = (activeDataset?.name || 'dataset').replace(/[^a-zA-Z0-9_\-\u0E00-\u0E7F]/g, '_');
+      link.download = `${safeName}_ground_truth.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(downloadUrl);
+
+      setSaveFeedback(true);
+      setTimeout(() => setSaveFeedback(false), 2500);
+    } catch (err) {
+      alert(`ดาวน์โหลด GT ZIP ผิดพลาด: ${err.message}`);
+    } finally {
+      setSavingGt(false);
+    }
+  };
+
   // AI Auto-Detect (ดีเทคอัตโนมัติเพื่อช่วยตีกรอบ)
   const handleAutoDetect = async () => {
     if (!selectedImage) return;
@@ -975,6 +1244,13 @@ export default function StudioView({
         style={{ display: 'none' }}
         onChange={(e) => handleIngestFiles(e.target.files)}
       />
+      <input
+        type="file"
+        ref={zipInputRef}
+        accept=".zip"
+        style={{ display: 'none' }}
+        onChange={handleZipSelect}
+      />
 
       {/* Top Banner: Ingestion & Proceed to Training Action */}
       <div
@@ -989,7 +1265,7 @@ export default function StudioView({
           gap: '12px',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
           <button
             className="btn btn-primary"
             onClick={() => folderInputRef.current?.click()}
@@ -997,6 +1273,15 @@ export default function StudioView({
             style={{ fontWeight: 600 }}
           >
             <FolderUp size={16} /> โหลดโฟลเดอร์รูปจากเครื่อง
+          </button>
+          <button
+            className="btn btn-secondary"
+            onClick={() => zipInputRef.current?.click()}
+            disabled={uploading}
+            title="อัปโหลดไฟล์ ZIP รูปภาพเพื่อแตกไฟล์บนเว็บทันที"
+            style={{ fontWeight: 600 }}
+          >
+            <Archive size={15} /> อัปโหลดไฟล์ ZIP รูปภาพ
           </button>
           <button
             className="btn btn-secondary"
@@ -1015,8 +1300,21 @@ export default function StudioView({
           )}
         </div>
 
-        {/* PROCEED TO TRAINING BUTTON */}
+        {/* PROCEED TO TRAINING & GT DOWNLOAD BUTTONS */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {images.length > 0 && (
+            <button
+              className="btn btn-secondary"
+              onClick={handleDownloadAllGtZip}
+              disabled={savingGt}
+              title="เซฟไฟล์ GT โดยโหลดทั้งโฟลเดอร์ลงเครื่องเป็นไฟล์ .ZIP เพื่อนำไปเทรน"
+              style={{ fontWeight: 600 }}
+            >
+              <Download size={15} />
+              {savingGt ? 'กำลังจัดเตรียม ZIP...' : 'บันทึกและดาวน์โหลด GT (.ZIP)'}
+            </button>
+          )}
+
           <button
             className="btn btn-lg"
             style={{
@@ -1081,7 +1379,7 @@ export default function StudioView({
             คลิกปุ่มเพื่อเลือกโฟลเดอร์ หรือลากโฟลเดอร์รูปภาพจากเครื่องมาวางที่นี่
             ระบบจะแสดงรูปภาพทีละรูปให้คุณตีกรอบ จัดประเภทออปเจค และบันทึกเป็นไฟล์ GT มัดรวมไปเทรนโมเดลได้ทันที
           </p>
-          <div style={{ display: 'flex', gap: '12px' }}>
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'center' }}>
             <button
               className="btn btn-primary btn-lg"
               onClick={(e) => {
@@ -1090,6 +1388,16 @@ export default function StudioView({
               }}
             >
               <FolderUp size={17} /> เลือกโฟลเดอร์จากเครื่อง
+            </button>
+            <button
+              className="btn btn-secondary btn-lg"
+              onClick={(e) => {
+                e.stopPropagation();
+                zipInputRef.current?.click();
+              }}
+              style={{ fontWeight: 600 }}
+            >
+              <Archive size={17} /> อัปโหลดไฟล์ ZIP รูปภาพ
             </button>
             <button
               className="btn btn-secondary btn-lg"

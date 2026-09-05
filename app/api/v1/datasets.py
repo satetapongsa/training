@@ -1,4 +1,7 @@
 import io
+import re
+import zipfile
+import yaml
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status, Query
@@ -173,6 +176,362 @@ async def upload_images(
         "errors": errors,
     }
 
+
+async def _extract_and_import_zip(
+    zip_bytes: bytes,
+    dataset: Dataset,
+    db: AsyncSession,
+) -> Dict[str, Any]:
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(zip_bytes))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"ไฟล์ไม่ใช่ ZIP ที่ถูกต้อง: {str(e)}")
+
+    namelist = [n for n in zf.namelist() if not n.startswith("__MACOSX/") and not n.endswith("/")]
+
+    # 1. Discover classes from classes.txt or dataset.yaml
+    extracted_classes = list(dataset.classes) if dataset.classes else []
+    for fname in namelist:
+        lower_name = fname.lower()
+        if lower_name.endswith("classes.txt"):
+            try:
+                content = zf.read(fname).decode("utf-8", errors="replace")
+                cls_lines = [c.strip() for c in content.splitlines() if c.strip()]
+                if cls_lines:
+                    for c in cls_lines:
+                        if c not in extracted_classes:
+                            extracted_classes.append(c)
+            except Exception:
+                pass
+        elif lower_name.endswith("dataset.yaml") or lower_name.endswith("data.yaml"):
+            try:
+                content = zf.read(fname).decode("utf-8", errors="replace")
+                yaml_data = yaml.safe_load(content)
+                raw_names = yaml_data.get("names", [])
+                if isinstance(raw_names, dict):
+                    names_list = [raw_names[k] for k in sorted(raw_names.keys())]
+                elif isinstance(raw_names, list):
+                    names_list = raw_names
+                else:
+                    names_list = []
+                for c in names_list:
+                    if str(c) not in extracted_classes:
+                        extracted_classes.append(str(c))
+            except Exception:
+                pass
+
+    if not extracted_classes:
+        extracted_classes = ["object"]
+    dataset.classes = extracted_classes
+
+    # 2. Collect label txt files: map stem -> text content
+    label_files: Dict[str, str] = {}
+    image_entries: List[str] = []
+    valid_img_exts = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+
+    for fname in namelist:
+        p = Path(fname)
+        ext = p.suffix.lower()
+        if ext == ".txt" and p.name.lower() not in ("classes.txt", "requirements.txt"):
+            try:
+                txt_content = zf.read(fname).decode("utf-8", errors="replace")
+                label_files[p.stem.lower()] = txt_content
+            except Exception:
+                pass
+        elif ext in valid_img_exts:
+            image_entries.append(fname)
+
+    if not image_entries:
+        raise HTTPException(status_code=400, detail="ไม่พบไฟล์รูปภาพ (.jpg, .png, .webp, .bmp) ในไฟล์ ZIP นี้")
+
+    uploaded = []
+    errors = []
+    total_annotations_added = 0
+
+    for img_entry in image_entries:
+        try:
+            content = zf.read(img_entry)
+            raw_name = Path(img_entry).name
+            rec = await DatasetManager.process_and_save_image(
+                db=db,
+                dataset=dataset,
+                filename=raw_name,
+                file_stream=io.BytesIO(content),
+                original_name=raw_name,
+            )
+            if rec:
+                uploaded.append({"id": rec.id, "filename": rec.filename})
+                stem = Path(raw_name).stem.lower()
+                if stem in label_files:
+                    lines = label_files[stem].splitlines()
+                    has_annot = False
+                    for line in lines:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        parts = line.split()
+                        if len(parts) >= 5:
+                            try:
+                                cid = int(parts[0])
+                                if cid < len(dataset.classes):
+                                    c_name = dataset.classes[cid]
+                                else:
+                                    c_name = f"class_{cid}"
+                                    if c_name not in dataset.classes:
+                                        dataset.classes.append(c_name)
+
+                                if len(parts) == 5:
+                                    cx = float(parts[1])
+                                    cy = float(parts[2])
+                                    w = float(parts[3])
+                                    h = float(parts[4])
+                                    seg = None
+                                else:
+                                    coords = [float(x) for x in parts[1:]]
+                                    xs = coords[0::2]
+                                    ys = coords[1::2]
+                                    if xs and ys:
+                                        xmin = min(xs)
+                                        xmax = max(xs)
+                                        ymin = min(ys)
+                                        ymax = max(ys)
+                                        cx = (xmin + xmax) / 2.0
+                                        cy = (ymin + ymax) / 2.0
+                                        w = max(0.001, xmax - xmin)
+                                        h = max(0.001, ymax - ymin)
+                                        seg = [[round(xs[i], 6), round(ys[i], 6)] for i in range(len(xs))]
+                                    else:
+                                        continue
+
+                                annot = Annotation(
+                                    image_id=rec.id,
+                                    class_id=cid,
+                                    class_name=c_name,
+                                    bbox_x=cx,
+                                    bbox_y=cy,
+                                    bbox_w=w,
+                                    bbox_h=h,
+                                    segmentation=seg,
+                                    confidence=1.0,
+                                )
+                                db.add(annot)
+                                total_annotations_added += 1
+                                has_annot = True
+                            except Exception as pe:
+                                errors.append(f"Label parse error in {stem}.txt: {pe}")
+
+                    if has_annot:
+                        rec.is_annotated = True
+                        await db.commit()
+            else:
+                errors.append(f"Failed verification for {raw_name}")
+        except Exception as e:
+            errors.append(f"Upload error {img_entry}: {str(e)}")
+
+    if total_annotations_added > 0:
+        dataset.total_annotations += total_annotations_added
+
+    # Auto-split & generate physical YOLO structure
+    try:
+        img_res = await db.execute(
+            select(Image).options(selectinload(Image.annotations)).filter(Image.dataset_id == dataset.id)
+        )
+        all_imgs = img_res.scalars().all()
+        if all_imgs:
+            image_dicts = [{"id": img.id} for img in all_imgs]
+            splits = DatasetSplitter.calculate_splits(
+                images=image_dicts,
+                train_ratio=0.8,
+                val_ratio=0.2,
+                test_ratio=0.0,
+            )
+            img_map = {img.id: img for img in all_imgs}
+            train_count = 0
+            val_count = 0
+            for split_name, ids in splits.items():
+                for i_id in ids:
+                    if i_id in img_map:
+                        img_map[i_id].split = split_name
+                        if split_name == "train":
+                            train_count += 1
+                        elif split_name == "val":
+                            val_count += 1
+
+            dataset.train_count = train_count
+            dataset.val_count = val_count
+
+            images_with_annots = []
+            for img in all_imgs:
+                ann_dicts = [
+                    {
+                        "class_id": a.class_id,
+                        "bbox_x": a.bbox_x,
+                        "bbox_y": a.bbox_y,
+                        "bbox_w": a.bbox_w,
+                        "bbox_h": a.bbox_h,
+                        "segmentation": a.segmentation,
+                    }
+                    for a in img.annotations
+                ]
+                images_with_annots.append(
+                    ({"id": img.id, "filename": img.filename, "file_path": img.file_path, "split": img.split}, ann_dicts)
+                )
+
+            DatasetSplitter.generate_yolo_manifest_structure(
+                dataset_dir=settings.DATASET_DIR,
+                dataset_name=dataset.name,
+                classes=dataset.classes,
+                images_with_annotations=images_with_annots,
+            )
+    except Exception as se:
+        logger.warning(f"Auto-split warning on zip import: {se}")
+
+    await db.commit()
+    await db.refresh(dataset)
+
+    return {
+        "success": True,
+        "dataset_id": dataset.id,
+        "dataset_name": dataset.name,
+        "uploaded_count": len(uploaded),
+        "imported_annotations": total_annotations_added,
+        "classes": dataset.classes,
+        "errors_count": len(errors),
+        "errors": errors,
+    }
+
+
+@router.post("/upload-zip")
+async def upload_dataset_zip(
+    file: UploadFile = File(...),
+    dataset_name: Optional[str] = Form(None),
+    project_id: Optional[int] = Form(None),
+    task_type: Optional[str] = Form("detection"),
+    db: AsyncSession = Depends(get_database_session),
+):
+    """Upload a ZIP containing images and companion GT labels to create a new dataset."""
+    project = None
+    if project_id:
+        proj_res = await db.execute(select(Project).filter(Project.id == project_id))
+        project = proj_res.scalar_one_or_none()
+    if not project:
+        proj_first = await db.execute(select(Project).order_by(Project.id))
+        project = proj_first.scalars().first()
+        if not project:
+            project = Project(name="Workspace", task_type=task_type or "detection")
+            db.add(project)
+            await db.commit()
+            await db.refresh(project)
+
+    import time
+    clean_base = Path(file.filename or "dataset").stem
+    clean_base = re.sub(r"[^a-zA-Z0-9_\-\u0E00-\u0E7F]", "_", clean_base)
+    name = dataset_name or f"{clean_base}_{int(time.time())}"
+
+    dataset = Dataset(
+        project_id=project.id,
+        name=name,
+        description=f"นำเข้าจากไฟล์ ZIP: {file.filename}",
+        task_type=task_type or "detection",
+        classes=["object"],
+    )
+    db.add(dataset)
+    await db.commit()
+    await db.refresh(dataset)
+
+    zip_bytes = await file.read()
+    result = await _extract_and_import_zip(zip_bytes=zip_bytes, dataset=dataset, db=db)
+    result["dataset"] = DatasetResponse.model_validate(dataset)
+    return result
+
+
+@router.post("/{dataset_id}/upload-zip")
+async def upload_zip_to_existing_dataset(
+    dataset_id: int,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_database_session),
+):
+    """Upload a ZIP file into an existing dataset."""
+    result = await db.execute(select(Dataset).filter(Dataset.id == dataset_id))
+    dataset = result.scalar_one_or_none()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found.")
+
+    zip_bytes = await file.read()
+    res = await _extract_and_import_zip(zip_bytes=zip_bytes, dataset=dataset, db=db)
+    res["dataset"] = DatasetResponse.model_validate(dataset)
+    return res
+
+
+@router.get("/{dataset_id}/download-zip")
+async def download_dataset_zip(
+    dataset_id: int,
+    db: AsyncSession = Depends(get_database_session),
+):
+    """Packages the dataset images, YOLO Ground Truth labels, classes.txt, and dataset.yaml into a ZIP file."""
+    result = await db.execute(select(Dataset).filter(Dataset.id == dataset_id))
+    dataset = result.scalar_one_or_none()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found.")
+
+    img_res = await db.execute(
+        select(Image).options(selectinload(Image.annotations)).filter(Image.dataset_id == dataset_id)
+    )
+    images = img_res.scalars().all()
+    if not images:
+        raise HTTPException(status_code=400, detail="ชุดข้อมูลนี้ยังไม่มีรูปภาพสำหรับดาวน์โหลด")
+
+    classes_list = list(dataset.classes) if dataset.classes else ["object"]
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        # 1. classes.txt
+        zf.writestr("classes.txt", "\n".join(classes_list) + "\n")
+
+        # 2. dataset.yaml
+        yaml_data = {
+            "path": "./",
+            "train": "images",
+            "val": "images",
+            "names": {i: name for i, name in enumerate(classes_list)},
+            "nc": len(classes_list),
+        }
+        zf.writestr("dataset.yaml", yaml.dump(yaml_data, sort_keys=False))
+
+        # 3. images/ and labels/
+        for img in images:
+            img_filename = img.original_name or img.filename
+            img_path = Path(img.file_path)
+
+            if img_path.exists():
+                try:
+                    zf.write(img_path, f"images/{img_filename}")
+                except Exception as e:
+                    logger.warning(f"Error packing image {img_filename} to zip: {e}")
+
+            # Ground Truth label .txt
+            label_stem = Path(img_filename).stem
+            label_lines = []
+            for a in img.annotations:
+                cid = a.class_id
+                if a.segmentation and len(a.segmentation) >= 3:
+                    pts_str = " ".join(f"{float(pt[0]):.6f} {float(pt[1]):.6f}" for pt in a.segmentation)
+                    label_lines.append(f"{cid} {pts_str}")
+                else:
+                    label_lines.append(
+                        f"{cid} {float(a.bbox_x):.6f} {float(a.bbox_y):.6f} {float(a.bbox_w):.6f} {float(a.bbox_h):.6f}"
+                    )
+
+            zf.writestr(f"labels/{label_stem}.txt", "\n".join(label_lines) + ("\n" if label_lines else ""))
+
+    zip_buffer.seek(0)
+    safe_name = re.sub(r"[^a-zA-Z0-9_\-]", "_", dataset.name)
+    filename = f"{safe_name}_gt.zip"
+    return Response(
+        content=zip_buffer.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/{dataset_id}/import-folder")

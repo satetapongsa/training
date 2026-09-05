@@ -109,6 +109,42 @@ export async function uploadFilesChunked(datasetId, files, onProgress) {
   return lastResult;
 }
 
+// Upload a single ZIP containing images and optional companion GT files
+export async function uploadDatasetZip(file, datasetName, projectId) {
+  const formData = new FormData();
+  formData.append('file', file);
+  if (datasetName) formData.append('dataset_name', datasetName);
+  if (projectId) formData.append('project_id', projectId);
+
+  const res = await fetch(`${BASE_URL}/api/v1/datasets/upload-zip`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(errorData.detail || `Upload ZIP failed with status ${res.status}`);
+  }
+
+  return await res.json();
+}
+
+// Get URL for downloading dataset + GT as ZIP
+export function getDatasetZipDownloadUrl(datasetId) {
+  return `${BASE_URL}/api/v1/datasets/${datasetId}/download-zip`;
+}
+
+// Trigger direct browser download of dataset + GT ZIP
+export function downloadDatasetZip(datasetId, datasetName = 'dataset') {
+  const url = getDatasetZipDownloadUrl(datasetId);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${datasetName}_gt.zip`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
 // --- Annotations ---
 export async function getAnnotations(imageId) {
   return request(`/api/v1/annotations/${imageId}`);
