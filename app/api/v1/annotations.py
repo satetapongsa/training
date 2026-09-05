@@ -73,11 +73,34 @@ async def batch_save_annotations(payload: BatchAnnotationsUpdate, db: AsyncSessi
     img.is_annotated = len(new_annots) > 0
     await db.commit()
 
+    # Update dataset classes list if new classes were created
+    if img.dataset_id and new_annots:
+        ds_res = await db.execute(select(Dataset).filter(Dataset.id == img.dataset_id))
+        ds = ds_res.scalar_one_or_none()
+        if ds:
+            existing_classes = set(ds.classes or [])
+            for a in payload.annotations:
+                if a.class_name:
+                    existing_classes.add(a.class_name.strip())
+            ds.classes = list(existing_classes)
+            await db.commit()
+
     # Re-query
     for annot in new_annots:
         await db.refresh(annot)
 
     return new_annots
+
+
+@router.post("/{image_id}", response_model=List[AnnotationResponse])
+async def save_image_annotations_alias(
+    image_id: int,
+    payload: List[AnnotationBase],
+    db: AsyncSession = Depends(get_database_session),
+):
+    batch_payload = BatchAnnotationsUpdate(image_id=image_id, annotations=payload)
+    return await batch_save_annotations(payload=batch_payload, db=db)
+
 
 
 @router.delete("/{annotation_id}", status_code=status.HTTP_204_NO_CONTENT)

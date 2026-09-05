@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Sidebar from './components/Sidebar';
 import Topbar from './components/Topbar';
+import StudioView from './views/StudioView';
 import DashboardView from './views/DashboardView';
 import ProjectsView from './views/ProjectsView';
 import DatasetsView from './views/DatasetsView';
@@ -20,7 +21,7 @@ import {
 } from './api/client';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState('studio');
   const [projects, setProjects] = useState([]);
   const [activeProject, setActiveProject] = useState(null);
   const [datasets, setDatasets] = useState([]);
@@ -172,6 +173,18 @@ export default function App() {
         />
 
         <div className="content-body">
+          {activeTab === 'studio' && (
+            <StudioView
+              activeProject={activeProject}
+              activeDataset={activeDataset}
+              setActiveDataset={setActiveDataset}
+              onProceedToTraining={(ds) => {
+                if (ds) setActiveDataset(ds);
+                setActiveTab('training');
+              }}
+            />
+          )}
+
           {activeTab === 'dashboard' && (
             <DashboardView
               projects={projects}

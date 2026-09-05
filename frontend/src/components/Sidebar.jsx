@@ -1,24 +1,20 @@
 import React from 'react';
 import {
-  LayoutDashboard,
-  FolderKanban,
-  Database,
-  Highlighter,
+  FolderUp,
   Play,
-  Boxes,
   Crosshair,
+  Boxes,
+  Database,
   Cpu,
 } from 'lucide-react';
 
 export default function Sidebar({ activeTab, setActiveTab, activeProject }) {
   const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'projects', label: 'Projects', icon: FolderKanban },
-    { id: 'datasets', label: 'Datasets', icon: Database },
-    { id: 'annotations', label: 'Annotations', icon: Highlighter },
-    { id: 'training', label: 'Training', icon: Play },
-    { id: 'models', label: 'Models', icon: Boxes },
-    { id: 'inference', label: 'Inference', icon: Crosshair },
+    { id: 'studio', label: 'Studio Workspace', icon: FolderUp },
+    { id: 'training', label: 'Model Training', icon: Play },
+    { id: 'inference', label: 'Inference Tester', icon: Crosshair },
+    { id: 'models', label: 'Model Registry', icon: Boxes },
+    { id: 'datasets', label: 'All Datasets', icon: Database },
     { id: 'system', label: 'System Info', icon: Cpu },
   ];
 
@@ -29,7 +25,7 @@ export default function Sidebar({ activeTab, setActiveTab, activeProject }) {
         <div
           className="logo-badge"
           title="Vision Studio"
-          onClick={() => setActiveTab('dashboard')}
+          onClick={() => setActiveTab('studio')}
         >
           <svg
             width="26"

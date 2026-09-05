@@ -3,13 +3,11 @@ import { Plus, Wifi, FolderPlus } from 'lucide-react';
 
 export default function Topbar({ activeTab, onNewProject, onNewDataset, wsConnected }) {
   const titles = {
-    dashboard: 'Platform Overview',
-    projects: 'Project Management',
-    datasets: 'Dataset & Folder Studio',
-    annotations: 'Interactive Label Studio',
+    studio: 'Studio Workspace (อัพโหลด & ตีกรอบ)',
     training: 'Model Training & Live Telemetry',
-    models: 'Model Registry & Exports',
     inference: 'Inference Playground & Testing',
+    models: 'Model Registry & Exports',
+    datasets: 'Dataset Management',
     system: 'System Diagnostics & Hardware',
   };
 

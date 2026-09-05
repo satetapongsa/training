@@ -115,10 +115,32 @@ export async function getAnnotations(imageId) {
 }
 
 export async function saveAnnotations(imageId, annotations) {
-  return request(`/api/v1/annotations/${imageId}`, {
-    method: 'POST',
+  return request('/api/v1/annotations/batch', {
+    method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(annotations),
+    body: JSON.stringify({
+      image_id: Number(imageId),
+      annotations: annotations.map((a, idx) => {
+        const x_min = a.x_min !== undefined ? a.x_min : 0;
+        const y_min = a.y_min !== undefined ? a.y_min : 0;
+        const x_max = a.x_max !== undefined ? a.x_max : 1;
+        const y_max = a.y_max !== undefined ? a.y_max : 1;
+        const width = a.bbox_w !== undefined ? a.bbox_w : Math.max(0.01, x_max - x_min);
+        const height = a.bbox_h !== undefined ? a.bbox_h : Math.max(0.01, y_max - y_min);
+        const centerX = a.bbox_x !== undefined ? a.bbox_x : x_min + width / 2;
+        const centerY = a.bbox_y !== undefined ? a.bbox_y : y_min + height / 2;
+
+        return {
+          class_id: a.class_id !== undefined ? Number(a.class_id) : idx,
+          class_name: String(a.class_name || a.label || 'object').trim(),
+          bbox_x: Math.min(1.0, Math.max(0.0, centerX)),
+          bbox_y: Math.min(1.0, Math.max(0.0, centerY)),
+          bbox_w: Math.min(1.0, Math.max(0.001, width)),
+          bbox_h: Math.min(1.0, Math.max(0.001, height)),
+          confidence: a.confidence !== undefined ? Number(a.confidence) : 1.0,
+        };
+      }),
+    }),
   });
 }
 
