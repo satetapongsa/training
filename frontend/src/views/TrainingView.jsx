@@ -355,31 +355,7 @@ export default function TrainingView({
           <h3 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)' }}>
             ตั้งค่าการเทรนโมเดล
           </h3>
-          <span className="badge badge-primary" style={{ fontSize: '11px' }}>
-            Single Task Mode
-          </span>
         </div>
-
-        {/* Concurrency warning if another job is active */}
-        {activeJobConflict && (
-          <div
-            style={{
-              padding: '10px 12px',
-              borderRadius: 'var(--radius-sm)',
-              backgroundColor: '#fffbeb',
-              border: '1px solid #fde68a',
-              fontSize: '12px',
-              color: '#92400e',
-              lineHeight: 1.5,
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, marginBottom: '2px' }}>
-              <AlertCircle size={14} color="#d97706" />
-              ระบบกำลังเทรนงานอื่นอยู่ (Job ID: {activeJobConflict.id})
-            </div>
-            อนุญาตให้เทรนได้ครั้งละ 1 งานเท่านั้น เพื่อให้ระบบคำนวณเต็มประสิทธิภาพและรวดเร็ว
-          </div>
-        )}
 
         {/* 1. Target Dataset / GT Folder Selector */}
         <div className="form-group" style={{ marginBottom: 0 }}>

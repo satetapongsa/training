@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Crosshair, Upload, Zap, Sliders, Image as ImageIcon } from 'lucide-react';
+import { Crosshair, Upload, Zap, Sliders, Image as ImageIcon, Layers, CheckCircle2, AlertCircle } from 'lucide-react';
 import { runInference, getTrainingRuns } from '../api/client';
 
 export default function InferenceView({ activeProject, preselectedModel }) {
@@ -48,7 +48,7 @@ export default function InferenceView({ activeProject, preselectedModel }) {
 
   const handleRunInference = async () => {
     if (!testImageFile) {
-      alert('Please upload an image to run inference on!');
+      alert('กรุณาเลือกไฟล์ภาพสำหรับทดสอบก่อนกดตรวจจับ');
       return;
     }
 
@@ -58,14 +58,16 @@ export default function InferenceView({ activeProject, preselectedModel }) {
       formData.append('file', testImageFile);
       if (selectedRunId) {
         formData.append('run_id', selectedRunId);
+        formData.append('model_id', selectedRunId);
       }
       formData.append('confidence', confThreshold);
+      formData.append('conf_threshold', confThreshold);
       formData.append('iou_threshold', iouThreshold);
 
       const result = await runInference(formData);
       setInferenceResult(result);
     } catch (err) {
-      alert(`Inference failed: ${err.message}`);
+      alert(`การตรวจจับล้มเหลว: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -86,24 +88,38 @@ export default function InferenceView({ activeProject, preselectedModel }) {
       ctx.drawImage(img, 0, 0);
 
       // Draw detection bounding boxes if available
-      if (inferenceResult?.detections) {
-        inferenceResult.detections.forEach((det) => {
-          const x = det.box.x1 * canvas.width;
-          const y = det.box.y1 * canvas.height;
-          const w = (det.box.x2 - det.box.x1) * canvas.width;
-          const h = (det.box.y2 - det.box.y1) * canvas.height;
+      if (inferenceResult?.detections && inferenceResult.detections.length > 0) {
+        inferenceResult.detections.forEach((det, idx) => {
+          const x1 = det.box ? det.box.x1 : (det.x1 !== undefined ? det.x1 : 0);
+          const y1 = det.box ? det.box.y1 : (det.y1 !== undefined ? det.y1 : 0);
+          const x2 = det.box ? det.box.x2 : (det.x2 !== undefined ? det.x2 : 1);
+          const y2 = det.box ? det.box.y2 : (det.y2 !== undefined ? det.y2 : 1);
 
-          // Box
-          ctx.strokeStyle = '#10b981';
+          const x = x1 * canvas.width;
+          const y = y1 * canvas.height;
+          const w = (x2 - x1) * canvas.width;
+          const h = (y2 - y1) * canvas.height;
+
+          // Distinct color per class
+          const colors = ['#10b981', '#4f46e5', '#f59e0b', '#ef4444', '#06b6d4', '#ec4899'];
+          const color = colors[idx % colors.length];
+
+          // Box rect
+          ctx.strokeStyle = color;
           ctx.lineWidth = 3;
           ctx.strokeRect(x, y, w, h);
 
+          // Semi-transparent background
+          ctx.fillStyle = `${color}20`;
+          ctx.fillRect(x, y, w, h);
+
           // Label chip
-          const labelText = `${det.class_name} ${(det.confidence * 100).toFixed(0)}%`;
+          const confScore = Math.round((det.confidence || 1.0) * 100);
+          const labelText = `${det.class_name || 'object'} ${confScore}%`;
           ctx.font = 'bold 12px Inter, sans-serif';
           const textWidth = ctx.measureText(labelText).width;
 
-          ctx.fillStyle = '#10b981';
+          ctx.fillStyle = color;
           ctx.fillRect(x, Math.max(0, y - 22), textWidth + 14, 22);
 
           ctx.fillStyle = '#ffffff';
@@ -114,34 +130,40 @@ export default function InferenceView({ activeProject, preselectedModel }) {
   }, [testImagePreview, inferenceResult]);
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '20px' }}>
-      {/* Controls */}
-      <div className="card">
-        <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px' }}>
-          Inference Parameters
+    <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: '20px' }}>
+      {/* Controls Column */}
+      <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <h3 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)' }}>
+          ตั้งค่าการทดสอบภาพ
         </h3>
 
-        <div className="form-group">
-          <label className="form-label">Trained Model Checkpoint</label>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label className="form-label">เลือกโมเดลที่ต้องการทดสอบ</label>
           <select
             className="form-control"
             value={selectedRunId}
             onChange={(e) => setSelectedRunId(e.target.value)}
           >
-            {runs.length === 0 && <option value="">Default Baseline Model</option>}
-            {runs.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name || `Run #${r.id.slice(0, 8)}`} ({r.model_type})
-              </option>
-            ))}
+            <option value="">โมเดลล่าสุดในระบบ (Auto-Detect Latest Model)</option>
+            {runs.map((r) => {
+              const name = r.model_name || r.name || `Model #${r.id}`;
+              const arch = r.architecture || r.model_type || 'KDel 4.0';
+              return (
+                <option key={r.id} value={r.id}>
+                  {name} ({arch})
+                </option>
+              );
+            })}
           </select>
         </div>
 
-        <div className="form-group">
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-            <label className="form-label">Confidence Threshold</label>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+            <label className="form-label" style={{ marginBottom: 0 }}>
+              ค่าความมั่นใจขั้นต่ำ (Confidence Threshold)
+            </label>
             <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--accent-primary)' }}>
-              {confThreshold}
+              {Math.round(confThreshold * 100)}%
             </span>
           </div>
           <input
@@ -151,15 +173,17 @@ export default function InferenceView({ activeProject, preselectedModel }) {
             step="0.05"
             value={confThreshold}
             onChange={(e) => setConfThreshold(Number(e.target.value))}
-            style={{ width: '100%' }}
+            style={{ width: '100%', cursor: 'pointer' }}
           />
         </div>
 
-        <div className="form-group">
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-            <label className="form-label">NMS IoU Threshold</label>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+            <label className="form-label" style={{ marginBottom: 0 }}>
+              IoU Threshold (NMS)
+            </label>
             <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--accent-secondary)' }}>
-              {iouThreshold}
+              {Math.round(iouThreshold * 100)}%
             </span>
           </div>
           <input
@@ -169,11 +193,11 @@ export default function InferenceView({ activeProject, preselectedModel }) {
             step="0.05"
             value={iouThreshold}
             onChange={(e) => setIouThreshold(Number(e.target.value))}
-            style={{ width: '100%' }}
+            style={{ width: '100%', cursor: 'pointer' }}
           />
         </div>
 
-        <div style={{ marginTop: '20px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
           <input
             type="file"
             ref={fileInputRef}
@@ -183,65 +207,126 @@ export default function InferenceView({ activeProject, preselectedModel }) {
           />
           <button
             className="btn btn-secondary"
-            style={{ width: '100%', marginBottom: '10px' }}
+            style={{ width: '100%' }}
             onClick={() => fileInputRef.current?.click()}
           >
-            <Upload size={14} /> Select Test Image
+            <Upload size={14} /> เลือกรูปภาพจากเครื่อง
           </button>
 
           <button
             className="btn btn-primary btn-lg"
-            style={{ width: '100%' }}
+            style={{ width: '100%', fontWeight: 600 }}
             onClick={handleRunInference}
             disabled={loading || !testImageFile}
           >
-            <Zap size={16} /> {loading ? 'Running Model...' : 'Execute Inference'}
+            <Zap size={16} /> {loading ? 'กำลังตรวจจับ...' : 'เริ่มตรวจจับภาพ (Run Inference)'}
           </button>
         </div>
 
         {/* Inference Telemetry Result */}
         {inferenceResult && (
-          <div style={{ marginTop: '20px', padding: '14px', background: '#f8fafc', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Latency:</span>
-              <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--accent-success)' }}>
-                {inferenceResult.inference_time_ms ? `${inferenceResult.inference_time_ms.toFixed(1)} ms` : '--'}
+          <div
+            style={{
+              marginTop: '4px',
+              padding: '14px',
+              backgroundColor: '#f8fafc',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border-color)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>โมเดลที่ใช้:</span>
+              <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                {inferenceResult.model_name || 'KDel 4.0'}
               </span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Detections:</span>
-              <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                {inferenceResult.detections ? inferenceResult.detections.length : 0} objects
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>ความเร็วประมวลผล:</span>
+              <span style={{ fontSize: '12px', fontWeight: 600, color: '#10b981' }}>
+                {inferenceResult.inference_time_ms ? `${inferenceResult.inference_time_ms} ms` : '--'}
               </span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Device:</span>
-              <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                {inferenceResult.device || 'CPU'}
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>จำนวนวัตถุที่พบ:</span>
+              <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--accent-primary)' }}>
+                {inferenceResult.detections ? inferenceResult.detections.length : 0} รายการ
               </span>
             </div>
+
+            {/* List detected items */}
+            {inferenceResult.detections && inferenceResult.detections.length > 0 && (
+              <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                  รายการวัตถุที่ตรวจพบ:
+                </div>
+                {inferenceResult.detections.map((d, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      fontSize: '11px',
+                      padding: '4px 8px',
+                      backgroundColor: '#ffffff',
+                      borderRadius: '4px',
+                      border: '1px solid var(--border-color)',
+                    }}
+                  >
+                    <span>{d.class_name || 'object'}</span>
+                    <strong style={{ color: '#10b981' }}>{Math.round((d.confidence || 1.0) * 100)}%</strong>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
 
       {/* Visual Canvas Area */}
-      <div className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '480px', overflow: 'hidden' }}>
+      <div
+        className="card"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          minHeight: '480px',
+          overflow: 'hidden',
+          backgroundColor: '#f8fafc',
+        }}
+      >
         {testImagePreview ? (
-          <div style={{ maxWidth: '100%', maxHeight: '100%', overflow: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div
+            style={{
+              maxWidth: '100%',
+              maxHeight: '100%',
+              overflow: 'auto',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '12px',
+            }}
+          >
             <canvas
               ref={canvasRef}
               style={{
                 maxWidth: '100%',
                 maxHeight: 'calc(100vh - 180px)',
                 borderRadius: 'var(--radius-sm)',
-                boxShadow: '0 10px 30px rgba(0, 0, 0, 0.5)',
+                boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)',
+                backgroundColor: '#ffffff',
               }}
             />
           </div>
         ) : (
-          <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
-            <Crosshair size={40} style={{ margin: '0 auto 10px auto', display: 'block' }} />
-            Select or upload a test image to run real-time bounding box detection.
+          <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '40px 20px' }}>
+            <Crosshair size={44} style={{ margin: '0 auto 12px auto', display: 'block', color: 'var(--text-muted)' }} />
+            <div style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text-primary)', marginBottom: '4px' }}>
+              ยังไม่ได้เลือกรูปภาพทดสอบ
+            </div>
+            <div style={{ fontSize: '12px' }}>
+              คลิกปุ่ม &ldquo;เลือกรูปภาพจากเครื่อง&rdquo; เพื่อนำภาพมาทดสอบการตรวจจับวัตถุด้วยโมเดล AI
+            </div>
           </div>
         )}
       </div>
