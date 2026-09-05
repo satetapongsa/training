@@ -199,6 +199,24 @@ async def cancel_training_alias(job_id: int, db: AsyncSession = Depends(get_data
     return await stop_training(job_id=job_id, db=db)
 
 
+@router.post("/cancel-active")
+@router.post("/stop-active")
+async def stop_active_training(db: AsyncSession = Depends(get_database_session)):
+    """Cancels any active training job and resets pending/running jobs."""
+    active_id = training_worker.get_active_job_id()
+    if active_id:
+        training_worker.stop_job(active_id)
+
+    stmt = select(TrainingJob).filter(TrainingJob.status.in_(["running", "pending"]))
+    result = await db.execute(stmt)
+    active_jobs = result.scalars().all()
+    for j in active_jobs:
+        j.status = "cancelled"
+    await db.commit()
+
+    return {"success": True, "message": "ยกเลิกงานเทรนโมเดลเรียบร้อยแล้ว"}
+
+
 @router.post("/{job_id}/stop")
 async def stop_training(job_id: int, db: AsyncSession = Depends(get_database_session)):
     stmt = select(TrainingJob).filter(TrainingJob.id == job_id)
@@ -208,12 +226,12 @@ async def stop_training(job_id: int, db: AsyncSession = Depends(get_database_ses
         raise HTTPException(status_code=404, detail="Training job not found.")
 
     stopped = training_worker.stop_job(job_id)
-    if stopped:
+    if stopped or job.status in ("running", "pending"):
         job.status = "cancelled"
         await db.commit()
         return {"success": True, "message": "Training job cancelled successfully."}
 
-    return {"success": False, "message": "Job is not currently active."}
+    return {"success": True, "message": f"Job {job_id} status is already {job.status}."}
 
 
 @router.get("/{job_id}/logs")

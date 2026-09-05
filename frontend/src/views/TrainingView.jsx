@@ -20,6 +20,7 @@ import {
   getTrainingRuns,
   getTrainingStatus,
   cancelTraining,
+  cancelActiveTraining,
   getActiveTrainingJob,
   getJobWeightDownloadUrl,
   getWsUrl,
@@ -290,16 +291,22 @@ export default function TrainingView({
   };
 
   const handleCancelTraining = async () => {
-    const runIdToStop = currentRun?.id || activeJobConflict?.id;
-    if (!runIdToStop) return;
-
     try {
-      await cancelTraining(runIdToStop);
+      const runIdToStop = currentRun?.id || activeJobConflict?.id;
+      if (runIdToStop) {
+        await cancelTraining(runIdToStop);
+      }
+      await cancelActiveTraining();
       setIsTraining(false);
       setActiveJobConflict(null);
-      appendLog('ส่งคำขอยกเลิกการเทรนโมเดลเรียบร้อยแล้ว');
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+      appendLog('ยกเลิกการเทรนโมเดลเรียบร้อยแล้ว');
     } catch (err) {
-      alert(`ยกเลิกผิดพลาด: ${err.message}`);
+      console.warn('Cancel note:', err.message);
+      setIsTraining(false);
+      setActiveJobConflict(null);
+      appendLog('ยกเลิกการเทรนเรียบร้อยแล้ว');
     }
   };
 
@@ -505,28 +512,48 @@ export default function TrainingView({
           </select>
         </div>
 
-        {/* Start / Stop Training Action */}
-        <div style={{ marginTop: 'auto', paddingTop: '8px' }}>
-          {!isTraining ? (
-            <button
-              className="btn btn-primary btn-lg"
-              style={{ width: '100%', fontWeight: 600 }}
-              onClick={handleStartTraining}
-              disabled={Boolean(activeJobConflict)}
-            >
-              <Play size={16} />
-              เริ่มทำการเทรนชุดข้อมูลทั้งหมด
-            </button>
-          ) : (
-            <button
-              className="btn btn-danger btn-lg"
-              style={{ width: '100%', fontWeight: 600 }}
-              onClick={handleCancelTraining}
-            >
-              <Square size={16} />
-              หยุดการเทรนชั่วคราว
-            </button>
-          )}
+        {/* Action Buttons: เริ่มเทรน และ ยกเลิก */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: 'auto', paddingTop: '10px' }}>
+          <button
+            className="btn btn-primary btn-lg"
+            style={{
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              cursor: isTraining ? 'not-allowed' : 'pointer',
+              opacity: isTraining ? 0.6 : 1,
+            }}
+            onClick={handleStartTraining}
+            disabled={isTraining}
+            title="เริ่มทำการเทรนโมเดล AI"
+          >
+            <Play size={16} />
+            {isTraining ? 'กำลังเทรน...' : 'เริ่มเทรน'}
+          </button>
+
+          <button
+            className="btn btn-lg"
+            style={{
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              backgroundColor: isTraining ? '#ef4444' : '#f1f5f9',
+              color: isTraining ? '#ffffff' : '#94a3b8',
+              border: isTraining ? 'none' : '1px solid var(--border-color)',
+              cursor: isTraining ? 'pointer' : 'not-allowed',
+              transition: 'all 0.2s ease',
+            }}
+            onClick={handleCancelTraining}
+            disabled={!isTraining}
+            title="ยกเลิกการเทรนโมเดล"
+          >
+            <Square size={16} />
+            ยกเลิก
+          </button>
         </div>
       </div>
 

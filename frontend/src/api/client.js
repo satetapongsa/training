@@ -168,6 +168,12 @@ export async function cancelTraining(runId) {
   });
 }
 
+export async function cancelActiveTraining() {
+  return request('/api/v1/training/cancel-active', {
+    method: 'POST',
+  });
+}
+
 export async function getActiveTrainingJob() {
   return request('/api/v1/training/active');
 }
