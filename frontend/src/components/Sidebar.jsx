@@ -10,7 +10,7 @@ import {
 
 export default function Sidebar({ activeTab, setActiveTab, activeProject }) {
   const navItems = [
-    { id: 'studio', label: 'หน้าหลัก (อัพโหลด & ตีกรอบ)', icon: FolderUp },
+    { id: 'studio', label: 'หน้าหลัก (โหลดรูป & ตีกรอบ GT)', icon: FolderUp },
     { id: 'training', label: 'เทรนโมเดล (Training)', icon: Play },
     { id: 'inference', label: 'ทดสอบภาพ (Testing)', icon: Crosshair },
     { id: 'models', label: 'ดาวน์โหลดโมเดล (Models)', icon: Boxes },
@@ -18,7 +18,7 @@ export default function Sidebar({ activeTab, setActiveTab, activeProject }) {
 
   return (
     <aside className="sidebar">
-      {/* Brand area: ONLY the web app icon logo, no brand text and no model names */}
+      {/* Brand area: ONLY the web app icon logo */}
       <div className="sidebar-logo-area">
         <div
           className="logo-badge"
@@ -60,10 +60,7 @@ export default function Sidebar({ activeTab, setActiveTab, activeProject }) {
       </nav>
 
       <div className="sidebar-footer">
-        <div style={{ color: 'var(--text-muted)', marginBottom: '4px' }}>Active Project</div>
-        <div style={{ color: 'var(--text-primary)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {activeProject?.name || 'None Selected'}
-        </div>
+        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>AI Vision Studio</div>
       </div>
     </aside>
   );

@@ -12,20 +12,38 @@ import {
   CheckCircle2,
   Sparkles,
   Layers,
-  FileImage,
+  FileText,
+  Download,
+  Eye,
+  Check,
+  Zap,
 } from 'lucide-react';
 import {
-  getDatasets,
   createDataset,
   getDatasetImages,
   uploadFilesChunked,
   getAnnotations,
   saveAnnotations,
+  splitDataset,
+  runInference,
   API_BASE_URL,
 } from '../api/client';
 
+// Distinct curated color palette for object classes
+const CLASS_COLORS = [
+  '#4f46e5', // indigo
+  '#10b981', // emerald
+  '#f59e0b', // amber
+  '#ef4444', // rose
+  '#8b5cf6', // violet
+  '#06b6d4', // cyan
+  '#ec4899', // pink
+  '#14b8a6', // teal
+  '#f97316', // orange
+  '#6366f1', // blue-indigo
+];
+
 export default function StudioView({
-  activeProject,
   activeDataset,
   setActiveDataset,
   onProceedToTraining,
@@ -33,18 +51,25 @@ export default function StudioView({
   // Datasets & Images
   const [images, setImages] = useState([]);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+  const [filterMode, setFilterMode] = useState('all'); // 'all', 'pending', 'annotated'
+
+  // Object classes & current selection
+  const [classList, setClassList] = useState(['object', 'defect', 'product', 'person']);
+  const [currentClass, setCurrentClass] = useState('object');
+  const [newClassName, setNewClassName] = useState('');
 
   // Annotations on currently selected image
   const [annotations, setAnnotations] = useState([]);
-  const [currentClass, setCurrentClass] = useState('object');
-  const [classList, setClassList] = useState(['object', 'defect', 'item', 'person']);
-  const [newClassName, setNewClassName] = useState('');
+  const [savingGt, setSavingGt] = useState(false);
+  const [saveFeedback, setSaveFeedback] = useState(false);
+  const [autoDetecting, setAutoDetecting] = useState(false);
+  const [bundling, setBundling] = useState(false);
 
   // Canvas drawing state
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
   const [currentBox, setCurrentBox] = useState(null);
-  const [saving, setSaving] = useState(false);
+  const [selectedBoxIndex, setSelectedBoxIndex] = useState(null);
 
   // Upload state
   const [uploading, setUploading] = useState(false);
@@ -60,51 +85,77 @@ export default function StudioView({
 
   const selectedImage = images[selectedImageIndex] || null;
 
-  // Load existing images if dataset is present
+  // Helper to get class color
+  const getClassColor = (className) => {
+    const idx = classList.indexOf(className);
+    if (idx === -1) return '#4f46e5';
+    return CLASS_COLORS[idx % CLASS_COLORS.length];
+  };
+
+  // Helper to get class index
+  const getClassId = (className) => {
+    const idx = classList.indexOf(className);
+    return idx >= 0 ? idx : 0;
+  };
+
+  // Load existing images if dataset is provided
   useEffect(() => {
     if (activeDataset?.id) {
       loadImagesFromDataset(activeDataset.id);
     }
   }, [activeDataset]);
 
-  // Load annotations when active image changes
+  // Load annotations when selected image changes
   useEffect(() => {
-    if (selectedImage) {
-      if (selectedImage.annotations && selectedImage.annotations.length > 0) {
-        // If image object already has loaded annotations
-        const formatted = selectedImage.annotations.map((ann) => {
-          const w = ann.bbox_w !== undefined ? ann.bbox_w : ann.x_max - ann.x_min;
-          const h = ann.bbox_h !== undefined ? ann.bbox_h : ann.y_max - ann.y_min;
-          const cx = ann.bbox_x !== undefined ? ann.bbox_x : ann.x_min + w / 2;
-          const cy = ann.bbox_y !== undefined ? ann.bbox_y : ann.y_min + h / 2;
-          return {
+    if (!selectedImage) {
+      setAnnotations([]);
+      return;
+    }
+
+    if (selectedImage.annotations && selectedImage.annotations.length > 0) {
+      const formatted = selectedImage.annotations.map((ann) => {
+        const w = ann.bbox_w !== undefined ? ann.bbox_w : ann.x_max - ann.x_min;
+        const h = ann.bbox_h !== undefined ? ann.bbox_h : ann.y_max - ann.y_min;
+        const cx = ann.bbox_x !== undefined ? ann.bbox_x : ann.x_min + w / 2;
+        const cy = ann.bbox_y !== undefined ? ann.bbox_y : ann.y_min + h / 2;
+        const label = ann.class_name || ann.label || 'object';
+        return {
+          id: ann.id || Math.random().toString(),
+          label: label,
+          x_min: Math.max(0, cx - w / 2),
+          y_min: Math.max(0, cy - h / 2),
+          x_max: Math.min(1, cx + w / 2),
+          y_max: Math.min(1, cy + h / 2),
+        };
+      });
+      setAnnotations(formatted);
+      // Ensure class exists in classList
+      formatted.forEach((f) => {
+        if (!classList.includes(f.label)) {
+          setClassList((prev) => [...prev, f.label]);
+        }
+      });
+    } else if (selectedImage.id) {
+      getAnnotations(selectedImage.id)
+        .then((data) => {
+          const formatted = (data || []).map((ann) => ({
             id: ann.id || Math.random().toString(),
-            label: ann.class_name || ann.label || 'object',
-            x_min: Math.max(0, cx - w / 2),
-            y_min: Math.max(0, cy - h / 2),
-            x_max: Math.min(1, cx + w / 2),
-            y_max: Math.min(1, cy + h / 2),
-          };
-        });
-        setAnnotations(formatted);
-      } else if (selectedImage.id) {
-        // Fetch from backend
-        getAnnotations(selectedImage.id)
-          .then((data) => {
-            const formatted = (data || []).map((ann) => ({
-              id: ann.id || Math.random().toString(),
-              label: ann.class_name || 'object',
-              x_min: Math.max(0, ann.bbox_x - ann.bbox_w / 2),
-              y_min: Math.max(0, ann.bbox_y - ann.bbox_h / 2),
-              x_max: Math.min(1, ann.bbox_x + ann.bbox_w / 2),
-              y_max: Math.min(1, ann.bbox_y + ann.bbox_h / 2),
-            }));
-            setAnnotations(formatted);
-          })
-          .catch(() => setAnnotations([]));
-      } else {
-        setAnnotations([]);
-      }
+            label: ann.class_name || 'object',
+            x_min: Math.max(0, ann.bbox_x - ann.bbox_w / 2),
+            y_min: Math.max(0, ann.bbox_y - ann.bbox_h / 2),
+            x_max: Math.min(1, ann.bbox_x + ann.bbox_w / 2),
+            y_max: Math.min(1, ann.bbox_y + ann.bbox_h / 2),
+          }));
+          setAnnotations(formatted);
+          formatted.forEach((f) => {
+            if (!classList.includes(f.label)) {
+              setClassList((prev) => [...prev, f.label]);
+            }
+          });
+        })
+        .catch(() => setAnnotations([]));
+    } else {
+      setAnnotations([]);
     }
   }, [selectedImageIndex, selectedImage?.id]);
 
@@ -120,8 +171,25 @@ export default function StudioView({
     }
   };
 
-  // --- LOCAL FILE & FOLDER INGESTION ---
-  // Process dropped or selected files directly in the browser
+  // Keyboard navigation for image-by-image inspection
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Don't intercept if user is typing in an input
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        handlePrevImage();
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        handleNextImage();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedImageIndex, images.length]);
+
+  // --- LOCAL FOLDER & IMAGE INGESTION ---
   const handleIngestFiles = async (fileList) => {
     const rawFiles = Array.from(fileList);
     if (rawFiles.length === 0) return;
@@ -133,15 +201,15 @@ export default function StudioView({
     const labelFiles = rawFiles.filter((f) => /\.txt$/i.test(f.name));
 
     if (imageFiles.length === 0) {
-      alert('No supported image files found in the selected folder.');
+      alert('ไม่พบไฟล์รูปภาพที่รองรับ (.jpg, .png, .webp, .bmp) ในโฟลเดอร์ที่เลือก');
       return;
     }
 
     setUploading(true);
     setUploadProgress(10);
-    setUploadStatus(`Reading ${imageFiles.length} images locally from computer...`);
+    setUploadStatus(`กำลังอ่านไฟล์รูปภาพ ${imageFiles.length} รูปจากเครื่องของคุณ...`);
 
-    // Parse companion YOLO .txt labels client-side for immediate display
+    // Parse companion YOLO .txt labels client-side
     const labelsMap = new Map();
     for (const lf of labelFiles) {
       try {
@@ -153,7 +221,7 @@ export default function StudioView({
       }
     }
 
-    // Prepare local preview items immediately
+    // Prepare local preview items immediately for instant zero-lag rendering
     const localItems = imageFiles.map((file, idx) => {
       const localUrl = URL.createObjectURL(file);
       const baseName = file.name.replace(/\.[^/.]+$/, '').toLowerCase();
@@ -165,15 +233,16 @@ export default function StudioView({
         for (const line of lines) {
           const parts = line.trim().split(/\s+/);
           if (parts.length >= 5) {
-            const classIdx = parts[0];
+            const classIdx = parseInt(parts[0], 10);
             const cx = parseFloat(parts[1]);
             const cy = parseFloat(parts[2]);
             const w = parseFloat(parts[3]);
             const h = parseFloat(parts[4]);
             if (!isNaN(cx) && !isNaN(cy) && !isNaN(w) && !isNaN(h)) {
+              const labelName = classList[classIdx] || `class_${classIdx}`;
               initialAnnots.push({
                 id: Math.random().toString(),
-                label: `class_${classIdx}`,
+                label: labelName,
                 x_min: Math.max(0, cx - w / 2),
                 y_min: Math.max(0, cy - h / 2),
                 x_max: Math.min(1, cx + w / 2),
@@ -185,7 +254,7 @@ export default function StudioView({
       }
 
       return {
-        id: null, // will be assigned after backend upload
+        id: null,
         filename: file.name,
         original_name: file.name,
         localUrl: localUrl,
@@ -195,41 +264,46 @@ export default function StudioView({
       };
     });
 
-    // Instantly set images on screen so user can see them immediately!
     setImages(localItems);
     setSelectedImageIndex(0);
 
-    // Auto-ensure or create dataset on backend
+    // Auto-create dataset on backend
     try {
-      let targetDataset = activeDataset;
-      if (!targetDataset) {
-        // Detect folder name from webkitRelativePath
-        const folderName =
-          imageFiles[0].webkitRelativePath?.split('/')[0] ||
-          `Folder_${new Date().toISOString().slice(0, 10)}`;
-        setUploadStatus(`Creating training dataset "${folderName}"...`);
-        targetDataset = await createDataset({
-          project_id: activeProject?.id,
-          name: folderName,
-          description: `Ingested from local computer on ${new Date().toLocaleString()}`,
-        });
-        setActiveDataset(targetDataset);
-      }
+      const folderName =
+        imageFiles[0].webkitRelativePath?.split('/')[0] ||
+        `Folder_${new Date().toISOString().slice(0, 10)}_${Math.floor(Math.random() * 1000)}`;
+      setUploadStatus(`กำลังสร้างชุดข้อมูล "${folderName}" บนระบบ...`);
 
-      // Upload all files (images + label txt) chunked to backend
-      setUploadStatus(`Uploading ${rawFiles.length} files to server storage...`);
+      const targetDataset = await createDataset({
+        name: folderName,
+        description: `โหลดจากโฟลเดอร์ในเครื่องเมื่อ ${new Date().toLocaleString('th-TH')}`,
+        classes: classList,
+      });
+      setActiveDataset(targetDataset);
+
+      // Upload files chunked
+      setUploadStatus(`กำลังอัปโหลดรูปภาพ ${imageFiles.length} รูปขึ้นระบบจัดเก็บ...`);
       await uploadFilesChunked(targetDataset.id, rawFiles, (uploaded, total, pct) => {
         setUploadProgress(pct);
-        setUploadStatus(`Uploaded ${uploaded} / ${total} files (${pct}%)`);
+        setUploadStatus(`อัปโหลดแล้ว ${uploaded} / ${total} ไฟล์ (${pct}%)`);
       });
 
       // Reload fresh images with real database IDs
       const freshImages = await getDatasetImages(targetDataset.id);
       if (Array.isArray(freshImages) && freshImages.length > 0) {
-        setImages(freshImages);
+        // Merge any locally parsed annotations if backend didn't parse them yet
+        const merged = freshImages.map((fi, idx) => {
+          const match = localItems.find((li) => li.filename === fi.filename);
+          if (match && match.annotations.length > 0 && (!fi.annotations || fi.annotations.length === 0)) {
+            fi.annotations = match.annotations;
+            fi.is_annotated = true;
+          }
+          return fi;
+        });
+        setImages(merged);
       }
 
-      setUploadStatus('Folder successfully loaded & saved!');
+      setUploadStatus('โหลดโฟลเดอร์รูปภาพเสร็จสมบูรณ์ พร้อมตีกรอบ!');
       setTimeout(() => {
         setUploading(false);
         setUploadProgress(0);
@@ -249,15 +323,13 @@ export default function StudioView({
         entry.file((file) => resolve([file]), () => resolve([]));
       } else if (entry.isDirectory) {
         const dirReader = entry.createReader();
-        const entries = [];
         const readEntries = () => {
           dirReader.readEntries(async (results) => {
             if (!results.length) {
-              const fileArrays = await Promise.all(entries.map(scanFilesFromEntry));
-              resolve(fileArrays.flat());
+              resolve([]);
             } else {
-              entries.push(...results);
-              readEntries();
+              const fileArrays = await Promise.all(results.map(scanFilesFromEntry));
+              resolve(fileArrays.flat());
             }
           }, () => resolve([]));
         };
@@ -292,73 +364,93 @@ export default function StudioView({
     }
   };
 
-  // --- CANVAS BOUNDING BOX DRAWING (ตีกรอบ) ---
+  // --- CANVAS BOUNDING BOX RENDERING & INTERACTION (ตีกรอบ) ---
   useEffect(() => {
     if (!selectedImage || !canvasRef.current) return;
 
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
-    const imgUrl =
-      selectedImage.localUrl ||
-      (selectedImage.image_url
-        ? `${API_BASE_URL}${selectedImage.image_url}`
-        : `${API_BASE_URL}/api/v1/datasets/images/${selectedImage.id}/file`);
 
     const img = new Image();
+    const imageSrc =
+      selectedImage.localUrl ||
+      (selectedImage.id ? `${API_BASE_URL}/api/v1/datasets/images/${selectedImage.id}/file` : '');
+
+    if (!imageSrc) return;
+
     img.crossOrigin = 'anonymous';
-    img.src = imgUrl;
+    img.src = imageSrc;
     img.onload = () => {
       imageObjRef.current = img;
       canvas.width = img.naturalWidth || 800;
       canvas.height = img.naturalHeight || 600;
-      redraw(ctx, img);
+
+      redrawCanvas();
     };
-  }, [selectedImage, annotations, currentBox]);
+  }, [selectedImage, annotations, currentBox, selectedBoxIndex]);
 
-  const redraw = (ctx, img) => {
-    if (!ctx || !img) return;
-    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-    ctx.drawImage(img, 0, 0);
+  const redrawCanvas = () => {
+    const canvas = canvasRef.current;
+    const img = imageObjRef.current;
+    if (!canvas || !img) return;
 
-    // Color palette for classes
-    const colors = ['#6366f1', '#10b981', '#06b6d4', '#f59e0b', '#ec4899', '#8b5cf6'];
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-    // Draw saved annotations
+    // Draw existing annotations
     annotations.forEach((ann, idx) => {
-      const color = colors[idx % colors.length];
-      const x = ann.x_min * ctx.canvas.width;
-      const y = ann.y_min * ctx.canvas.height;
-      const w = (ann.x_max - ann.x_min) * ctx.canvas.width;
-      const h = (ann.y_max - ann.y_min) * ctx.canvas.height;
+      const isSelected = selectedBoxIndex === idx;
+      const x = ann.x_min * canvas.width;
+      const y = ann.y_min * canvas.height;
+      const w = (ann.x_max - ann.x_min) * canvas.width;
+      const h = (ann.y_max - ann.y_min) * canvas.height;
+      const color = getClassColor(ann.label);
 
+      // Bounding Box Rect
       ctx.strokeStyle = color;
-      ctx.lineWidth = 3;
+      ctx.lineWidth = isSelected ? 4 : 2.5;
+      ctx.fillStyle = `${color}22`; // semi-transparent fill
+      ctx.fillRect(x, y, w, h);
       ctx.strokeRect(x, y, w, h);
 
-      // Label background & text
+      // Label Tag Chip
       const labelText = ann.label || 'object';
       ctx.font = 'bold 13px Inter, sans-serif';
       const textWidth = ctx.measureText(labelText).width;
+      const badgeH = 22;
+      const badgeW = textWidth + 16;
 
       ctx.fillStyle = color;
-      ctx.fillRect(x, Math.max(0, y - 24), textWidth + 16, 24);
+      ctx.fillRect(x, Math.max(0, y - badgeH), badgeW, badgeH);
 
       ctx.fillStyle = '#ffffff';
-      ctx.fillText(labelText, x + 8, Math.max(16, y - 7));
+      ctx.fillText(labelText, x + 8, Math.max(15, y - 6));
     });
 
-    // Draw current dragging box
-    if (currentBox) {
-      ctx.strokeStyle = '#06b6d4';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([6, 6]);
+    // Draw currently actively dragged box
+    if (currentBox && currentBox.w > 0 && currentBox.h > 0) {
+      const color = getClassColor(currentClass);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([6, 4]);
+      ctx.fillStyle = `${color}25`;
+      ctx.fillRect(currentBox.x, currentBox.y, currentBox.w, currentBox.h);
       ctx.strokeRect(currentBox.x, currentBox.y, currentBox.w, currentBox.h);
       ctx.setLineDash([]);
+
+      // Badge
+      ctx.font = 'bold 12px Inter, sans-serif';
+      ctx.fillStyle = color;
+      ctx.fillRect(currentBox.x, Math.max(0, currentBox.y - 20), ctx.measureText(currentClass).width + 14, 20);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(currentClass, currentBox.x + 7, Math.max(14, currentBox.y - 5));
     }
   };
 
-  const getCanvasCoords = (e) => {
+  const getCanvasMousePos = (e) => {
     const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
@@ -369,32 +461,30 @@ export default function StudioView({
   };
 
   const handleMouseDown = (e) => {
-    if (!imageObjRef.current) return;
-    const coords = getCanvasCoords(e);
+    if (!selectedImage) return;
+    const pos = getCanvasMousePos(e);
     setIsDrawing(true);
-    setStartPos(coords);
-    setCurrentBox({ x: coords.x, y: coords.y, w: 0, h: 0 });
+    setStartPos(pos);
+    setCurrentBox({ x: pos.x, y: pos.y, w: 0, h: 0 });
+    setSelectedBoxIndex(null);
   };
 
   const handleMouseMove = (e) => {
     if (!isDrawing) return;
-    const coords = getCanvasCoords(e);
-    const x = Math.min(startPos.x, coords.x);
-    const y = Math.min(startPos.y, coords.y);
-    const w = Math.abs(coords.x - startPos.x);
-    const h = Math.abs(coords.y - startPos.y);
+    const pos = getCanvasMousePos(e);
+    const x = Math.min(startPos.x, pos.x);
+    const y = Math.min(startPos.y, pos.y);
+    const w = Math.abs(pos.x - startPos.x);
+    const h = Math.abs(pos.y - startPos.y);
     setCurrentBox({ x, y, w, h });
   };
 
   const handleMouseUp = () => {
-    if (!isDrawing || !currentBox || !canvasRef.current) {
-      setIsDrawing(false);
-      return;
-    }
+    if (!isDrawing) return;
     setIsDrawing(false);
 
-    if (currentBox.w > 10 && currentBox.h > 10) {
-      const canvas = canvasRef.current;
+    const canvas = canvasRef.current;
+    if (canvas && currentBox && currentBox.w > 10 && currentBox.h > 10) {
       const x_min = Math.max(0, currentBox.x / canvas.width);
       const y_min = Math.max(0, currentBox.y / canvas.height);
       const x_max = Math.min(1, (currentBox.x + currentBox.w) / canvas.width);
@@ -412,6 +502,13 @@ export default function StudioView({
       const updated = [...annotations, newAnn];
       setAnnotations(updated);
 
+      // Update in images list
+      setImages((prev) =>
+        prev.map((img, idx) =>
+          idx === selectedImageIndex ? { ...img, annotations: updated, is_annotated: true } : img
+        )
+      );
+
       // Auto-save if image has a database ID
       if (selectedImage?.id) {
         saveAnnotations(selectedImage.id, updated).catch(console.error);
@@ -423,24 +520,156 @@ export default function StudioView({
   const handleDeleteAnnotation = (index) => {
     const updated = annotations.filter((_, i) => i !== index);
     setAnnotations(updated);
+    setImages((prev) =>
+      prev.map((img, idx) =>
+        idx === selectedImageIndex ? { ...img, annotations: updated, is_annotated: updated.length > 0 } : img
+      )
+    );
     if (selectedImage?.id) {
       saveAnnotations(selectedImage.id, updated).catch(console.error);
     }
   };
 
-  const handleSaveManual = async () => {
-    if (!selectedImage?.id) {
-      alert('Annotations cached locally. They will be committed to the database.');
+  // --- SAVE GROUND TRUTH (บันทึกเป็นไฟล์ GT) ---
+  const handleSaveGroundTruth = async (advanceNext = false) => {
+    setSavingGt(true);
+    try {
+      if (selectedImage?.id) {
+        await saveAnnotations(selectedImage.id, annotations);
+      }
+
+      // Mark current image as annotated in state
+      setImages((prev) =>
+        prev.map((img, idx) =>
+          idx === selectedImageIndex
+            ? { ...img, annotations: [...annotations], is_annotated: annotations.length > 0 }
+            : img
+        )
+      );
+
+      setSaveFeedback(true);
+      setTimeout(() => setSaveFeedback(false), 2000);
+
+      if (advanceNext && selectedImageIndex < images.length - 1) {
+        setSelectedImageIndex(selectedImageIndex + 1);
+      }
+    } catch (err) {
+      alert(`บันทึก GT ผิดพลาด: ${err.message}`);
+    } finally {
+      setSavingGt(false);
+    }
+  };
+
+  // Export / Download Single Image GT (.txt) to PC
+  const handleDownloadSingleGt = () => {
+    if (!selectedImage) return;
+    const lines = annotations.map((ann) => {
+      const cx = (ann.x_min + ann.x_max) / 2;
+      const cy = (ann.y_min + ann.y_max) / 2;
+      const w = ann.x_max - ann.x_min;
+      const h = ann.y_max - ann.y_min;
+      const classId = getClassId(ann.label);
+      return `${classId} ${cx.toFixed(6)} ${cy.toFixed(6)} ${w.toFixed(6)} ${h.toFixed(6)}`;
+    });
+
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const baseName = selectedImage.filename?.replace(/\.[^/.]+$/, '') || 'annotation';
+    a.href = url;
+    a.download = `${baseName}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // AI Auto-Detect (ดีเทคอัตโนมัติเพื่อช่วยตีกรอบ)
+  const handleAutoDetect = async () => {
+    if (!selectedImage) return;
+    setAutoDetecting(true);
+    try {
+      let fileToSend = selectedImage.fileHandle;
+      if (!fileToSend && selectedImage.id) {
+        const res = await fetch(`${API_BASE_URL}/api/v1/datasets/images/${selectedImage.id}/file`);
+        const blob = await res.blob();
+        fileToSend = new File([blob], selectedImage.filename || 'image.jpg', { type: blob.type });
+      }
+
+      if (!fileToSend) {
+        alert('ไม่พบไฟล์ต้นฉบับสำหรับรันการตรวจจับ');
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('file', fileToSend);
+      formData.append('confidence', 0.25);
+
+      const result = await runInference(formData);
+      if (result && result.detections && result.detections.length > 0) {
+        const proposed = result.detections.map((det) => ({
+          id: Math.random().toString(),
+          label: det.class_name || currentClass,
+          x_min: det.box.x1,
+          y_min: det.box.y1,
+          x_max: det.box.x2,
+          y_max: det.box.y2,
+        }));
+
+        const merged = [...annotations, ...proposed];
+        setAnnotations(merged);
+
+        // Ensure detected classes exist in classList
+        proposed.forEach((p) => {
+          if (!classList.includes(p.label)) {
+            setClassList((prev) => [...prev, p.label]);
+          }
+        });
+
+        if (selectedImage.id) {
+          await saveAnnotations(selectedImage.id, merged);
+        }
+      } else {
+        alert('ไม่พบวัตถุเพิ่มเติมจากโมเดล AI ในภาพนี้ คุณสามารถคลิกลากตีกรอบเองได้เลย');
+      }
+    } catch (err) {
+      alert(`Auto-Detect: ${err.message}`);
+    } finally {
+      setAutoDetecting(false);
+    }
+  };
+
+  // --- PACKAGE & PROCEED TO TRAIN (มัดรวมไฟล์ GT และไปเทรนโมเดล) ---
+  const handlePackageAndTrain = async () => {
+    if (images.length === 0) {
+      alert('กรุณาโหลดโฟลเดอร์รูปภาพก่อนเริ่มการเทรน');
       return;
     }
-    setSaving(true);
+
+    setBundling(true);
     try {
-      await saveAnnotations(selectedImage.id, annotations);
-      alert('Annotations saved successfully!');
+      let ds = activeDataset;
+      if (!ds && images[0]?.dataset_id) {
+        ds = { id: images[0].dataset_id, name: 'current_dataset' };
+      }
+
+      if (ds?.id) {
+        // Trigger split and physical manifest generation (train/labels, val/labels)
+        await splitDataset(ds.id, {
+          train_ratio: 0.8,
+          val_ratio: 0.2,
+          test_ratio: 0.0,
+        });
+      }
+
+      if (onProceedToTraining) {
+        onProceedToTraining(ds);
+      }
     } catch (err) {
-      alert(`Save failed: ${err.message}`);
+      console.warn('Split / packaging note:', err.message);
+      if (onProceedToTraining) {
+        onProceedToTraining(activeDataset);
+      }
     } finally {
-      setSaving(false);
+      setBundling(false);
     }
   };
 
@@ -456,7 +685,7 @@ export default function StudioView({
     setNewClassName('');
   };
 
-  // Navigation between images
+  // Image Navigation
   const handlePrevImage = () => {
     if (selectedImageIndex > 0) {
       setSelectedImageIndex(selectedImageIndex - 1);
@@ -469,8 +698,20 @@ export default function StudioView({
     }
   };
 
+  // Filtered images list
+  const filteredImages = images.filter((img) => {
+    const hasBoxes = (img.annotations && img.annotations.length > 0) || img.is_annotated;
+    if (filterMode === 'pending') return !hasBoxes;
+    if (filterMode === 'annotated') return hasBoxes;
+    return true;
+  });
+
+  const annotatedCount = images.filter(
+    (img) => (img.annotations && img.annotations.length > 0) || img.is_annotated
+  ).length;
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 100px)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 98px)' }}>
       {/* Hidden file inputs for local folder and files */}
       <input
         type="file"
@@ -497,32 +738,35 @@ export default function StudioView({
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          marginBottom: '16px',
-          padding: '14px 20px',
+          marginBottom: '14px',
+          padding: '12px 18px',
           flexWrap: 'wrap',
           gap: '12px',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <button
             className="btn btn-primary"
             onClick={() => folderInputRef.current?.click()}
             disabled={uploading}
             style={{ fontWeight: 600 }}
           >
-            <FolderUp size={16} /> Upload Folder from PC
+            <FolderUp size={16} /> โหลดโฟลเดอร์รูปจากเครื่อง
           </button>
           <button
             className="btn btn-secondary"
             onClick={() => filesInputRef.current?.click()}
             disabled={uploading}
           >
-            <Upload size={15} /> Select Images
+            <Upload size={15} /> เลือกเฉพาะไฟล์รูปภาพ
           </button>
+
           {images.length > 0 && (
-            <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-              Loaded <strong>{images.length}</strong> images from your computer
-            </span>
+            <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginLeft: '6px' }}>
+              ทั้งหมด: <strong>{images.length}</strong> รูป | บันทึก GT แล้ว:{' '}
+              <strong style={{ color: 'var(--accent-success)' }}>{annotatedCount}</strong> รูป (
+              {Math.round((annotatedCount / images.length) * 100)}%)
+            </div>
           )}
         </div>
 
@@ -532,23 +776,26 @@ export default function StudioView({
             className="btn btn-lg"
             style={{
               background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-              color: '#fff',
+              color: '#ffffff',
               fontWeight: 600,
-              boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)',
+              boxShadow: '0 4px 12px rgba(16, 185, 129, 0.35)',
             }}
-            onClick={() => onProceedToTraining && onProceedToTraining(activeDataset)}
-            disabled={images.length === 0}
-            title="Takes this annotated dataset directly to Model Training"
+            onClick={handlePackageAndTrain}
+            disabled={images.length === 0 || bundling}
+            title="มัดรวมไฟล์ภาพและไฟล์ GT เข้าด้วยกัน แล้วนำไปสู่หน้าการเทรนโมเดล"
           >
             <Play size={16} />
-            Proceed to Model Training (ไปสู่หน้าการเทรน)
+            {bundling ? 'กำลังมัดรวมข้อมูล...' : 'มัดรวมไฟล์ GT และไปเทรนโมเดล'}
           </button>
         </div>
       </div>
 
       {/* Upload Progress Bar */}
       {uploading && (
-        <div className="card" style={{ marginBottom: '14px', padding: '12px 16px', borderColor: 'var(--accent-primary)' }}>
+        <div
+          className="card"
+          style={{ marginBottom: '14px', padding: '12px 16px', borderColor: 'var(--accent-primary)' }}
+        >
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '12px' }}>
             <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{uploadStatus}</span>
             <span style={{ fontWeight: 700, color: 'var(--accent-primary)' }}>{uploadProgress}%</span>
@@ -573,14 +820,23 @@ export default function StudioView({
           onDrop={handleDrop}
           onClick={() => folderInputRef.current?.click()}
         >
-          <FolderUp size={52} color="var(--accent-primary)" style={{ marginBottom: '16px' }} />
-          <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px' }}>
-            อัพโหลดโฟลเดอร์รูปภาพจากคอมพิวเตอร์ของคุณ
+          <FolderUp size={56} color="var(--accent-primary)" style={{ marginBottom: '16px' }} />
+          <h2 style={{ fontSize: '19px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px' }}>
+            โหลดโฟลเดอร์รูปภาพจากเครื่องเพื่อเริ่มตีกรอบและสร้างไฟล์ GT
           </h2>
-          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', maxWidth: '460px', lineHeight: 1.6, marginBottom: '20px' }}>
-            คลิกเพื่อเลือกโฟลเดอร์ หรือลากโฟลเดอร์รูปภาพมาวางที่นี่ ระบบจะอ่านไฟล์ในเครื่องทันที และเปิดให้ตีกรอบวัตถุได้เลย
+          <p
+            style={{
+              fontSize: '13px',
+              color: 'var(--text-secondary)',
+              maxWidth: '520px',
+              lineHeight: 1.6,
+              marginBottom: '22px',
+            }}
+          >
+            คลิกปุ่มเพื่อเลือกโฟลเดอร์ หรือลากโฟลเดอร์รูปภาพจากเครื่องมาวางที่นี่
+            ระบบจะแสดงรูปภาพทีละรูปให้คุณตีกรอบ จัดประเภทออปเจค และบันทึกเป็นไฟล์ GT มัดรวมไปเทรนโมเดลได้ทันที
           </p>
-          <div style={{ display: 'flex', gap: '10px' }}>
+          <div style={{ display: 'flex', gap: '12px' }}>
             <button
               className="btn btn-primary btn-lg"
               onClick={(e) => {
@@ -588,7 +844,7 @@ export default function StudioView({
                 folderInputRef.current?.click();
               }}
             >
-              <FolderUp size={16} /> เลือกโฟลเดอร์จากเครื่อง
+              <FolderUp size={17} /> เลือกโฟลเดอร์จากเครื่อง
             </button>
             <button
               className="btn btn-secondary btn-lg"
@@ -597,39 +853,75 @@ export default function StudioView({
                 filesInputRef.current?.click();
               }}
             >
-              <Upload size={16} /> เลือกเฉพาะไฟล์รูปภาพ
+              <Upload size={17} /> เลือกเฉพาะไฟล์รูปภาพ
             </button>
           </div>
         </div>
       ) : (
         /* 3-Column Studio Workspace */
-        <div style={{ display: 'grid', gridTemplateColumns: '230px 1fr 280px', gap: '16px', flex: 1, minHeight: 0 }}>
-          {/* Left: Filmstrip / Thumbnails */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '260px 1fr 310px',
+            gap: '14px',
+            flex: 1,
+            minHeight: 0,
+          }}
+        >
+          {/* Column 1: รายการรูปภาพทั้งหมด (Filmstrip) */}
           <div className="card" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '14px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
               <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                รูปภาพทั้งหมด ({images.length})
+                รูปภาพในโฟลเดอร์ ({images.length})
               </span>
               <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                 {selectedImageIndex + 1} / {images.length}
               </span>
             </div>
 
-            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '5px' }}>
-              {images.map((img, idx) => {
-                const isSelected = selectedImageIndex === idx;
+            {/* Filter Tabs */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '4px', marginBottom: '8px' }}>
+              <button
+                className={`btn btn-sm ${filterMode === 'all' ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ padding: '3px 6px', fontSize: '11px' }}
+                onClick={() => setFilterMode('all')}
+              >
+                ทั้งหมด
+              </button>
+              <button
+                className={`btn btn-sm ${filterMode === 'pending' ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ padding: '3px 6px', fontSize: '11px' }}
+                onClick={() => setFilterMode('pending')}
+              >
+                ยังไม่ตีกรอบ
+              </button>
+              <button
+                className={`btn btn-sm ${filterMode === 'annotated' ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ padding: '3px 6px', fontSize: '11px' }}
+                onClick={() => setFilterMode('annotated')}
+              >
+                GT แล้ว
+              </button>
+            </div>
+
+            {/* Image List */}
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              {filteredImages.map((img) => {
+                const realIdx = images.indexOf(img);
+                const isSelected = selectedImageIndex === realIdx;
                 const displayName =
                   img.original_name ||
                   img.filename ||
-                  (img.file_path ? img.file_path.split(/[\\/]/).pop() : `Image #${idx + 1}`);
+                  (img.file_path ? img.file_path.split(/[\\/]/).pop() : `Image #${realIdx + 1}`);
                 const annCount = img.annotations ? img.annotations.length : 0;
+                const hasGt = annCount > 0 || img.is_annotated;
 
                 return (
                   <div
-                    key={img.id || idx}
-                    onClick={() => setSelectedImageIndex(idx)}
+                    key={img.id || realIdx}
+                    onClick={() => setSelectedImageIndex(realIdx)}
                     style={{
-                      padding: '8px 10px',
+                      padding: '6px 8px',
                       borderRadius: 'var(--radius-sm)',
                       backgroundColor: isSelected ? '#eef2ff' : '#ffffff',
                       border: `1px solid ${isSelected ? 'var(--accent-primary)' : 'var(--border-color)'}`,
@@ -643,65 +935,129 @@ export default function StudioView({
                       transition: 'all 0.15s ease',
                     }}
                   >
-                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px' }}>
+                    <span
+                      style={{
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        maxWidth: '140px',
+                      }}
+                      title={displayName}
+                    >
                       {displayName}
                     </span>
-                    {annCount > 0 ? (
-                      <span className="badge badge-success" style={{ fontSize: '10px', padding: '1px 6px' }}>
-                        {annCount}
+
+                    {hasGt ? (
+                      <span className="badge badge-success" style={{ fontSize: '10px', padding: '2px 6px' }}>
+                        GT ({annCount})
                       </span>
                     ) : (
-                      <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>0</span>
+                      <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>รอตีกรอบ</span>
                     )}
                   </div>
                 );
               })}
             </div>
 
-            {/* Prev / Next Image buttons */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--border-color)' }}>
+            {/* Prev / Next buttons */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '8px',
+                marginTop: '10px',
+                paddingTop: '10px',
+                borderTop: '1px solid var(--border-color)',
+              }}
+            >
               <button
                 className="btn btn-sm btn-secondary"
                 onClick={handlePrevImage}
                 disabled={selectedImageIndex === 0}
               >
-                <ChevronLeft size={14} /> Prev
+                <ChevronLeft size={14} /> รูปก่อนหน้า
               </button>
               <button
                 className="btn btn-sm btn-secondary"
                 onClick={handleNextImage}
                 disabled={selectedImageIndex === images.length - 1}
               >
-                Next <ChevronRight size={14} />
+                รูปถัดไป <ChevronRight size={14} />
               </button>
+            </div>
+            <div style={{ textAlign: 'center', fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>
+              กดปุ่มลูกศร [ &larr; ] [ &rarr; ] บนคีย์บอร์ดเพื่อเปลี่ยนรูป
             </div>
           </div>
 
-          {/* Center: Interactive Canvas for Bounding Boxes ("ตีกรอบ") */}
+          {/* Column 2: พื้นที่ตีกรอบ (Interactive Annotation Canvas) */}
           <div
             className="card"
             style={{
               display: 'flex',
               flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
               position: 'relative',
               overflow: 'hidden',
-              padding: '10px',
-              backgroundColor: '#f1f5f9',
+              padding: '12px',
+              backgroundColor: '#f8fafc',
             }}
           >
-            {selectedImage ? (
-              <div
-                style={{
-                  maxWidth: '100%',
-                  maxHeight: '100%',
-                  overflow: 'auto',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
+            {/* Top Toolbar above Canvas */}
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '10px',
+                paddingBottom: '8px',
+                borderBottom: '1px solid var(--border-color)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                  รูปที่ {selectedImageIndex + 1} / {images.length}:
+                </span>
+                <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                  {selectedImage?.original_name || selectedImage?.filename}
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button
+                  className="btn btn-sm btn-secondary"
+                  onClick={handleAutoDetect}
+                  disabled={autoDetecting}
+                  title="ให้โมเดล AI ช่วยดีเทคและเสนอตำแหน่งกรอบอัตโนมัติ"
+                >
+                  <Sparkles size={13} color="var(--accent-primary)" />
+                  {autoDetecting ? 'กำลังดีเทค...' : 'ดีเทคอัตโนมัติ (AI Assist)'}
+                </button>
+                <button
+                  className="btn btn-sm btn-secondary"
+                  onClick={() => setAnnotations([])}
+                  disabled={annotations.length === 0}
+                  title="ล้างกรอบทั้งหมดบนรูปนี้"
+                >
+                  <Trash2 size={13} color="#ef4444" /> ล้างกรอบ
+                </button>
+              </div>
+            </div>
+
+            {/* Canvas Viewport */}
+            <div
+              style={{
+                flex: 1,
+                minHeight: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                overflow: 'auto',
+                position: 'relative',
+                background: '#f1f5f9',
+                borderRadius: 'var(--radius-sm)',
+              }}
+            >
+              {selectedImage ? (
                 <canvas
                   ref={canvasRef}
                   onMouseDown={handleMouseDown}
@@ -709,142 +1065,231 @@ export default function StudioView({
                   onMouseUp={handleMouseUp}
                   style={{
                     maxWidth: '100%',
-                    maxHeight: 'calc(100vh - 220px)',
+                    maxHeight: '100%',
                     cursor: 'crosshair',
                     borderRadius: 'var(--radius-sm)',
                     boxShadow: '0 4px 14px rgba(0, 0, 0, 0.08)',
                   }}
                 />
-              </div>
-            ) : null}
+              ) : null}
+            </div>
 
-            {/* Hint overlay */}
+            {/* Canvas Bottom Hint */}
             <div
               style={{
-                position: 'absolute',
-                bottom: '14px',
-                background: 'rgba(255, 255, 255, 0.95)',
-                boxShadow: 'var(--shadow-md)',
-                border: '1px solid var(--border-color)',
-                padding: '5px 14px',
-                borderRadius: 'var(--radius-full)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginTop: '8px',
                 fontSize: '11px',
-                fontWeight: 500,
-                color: 'var(--text-secondary)',
-                pointerEvents: 'none',
+                color: 'var(--text-muted)',
               }}
             >
-              คลิกและลากเมาส์บนภาพเพื่อตีกรอบวัตถุ (Draw bounding box)
+              <span>คลิกและลากเมาส์บนภาพเพื่อตีกรอบ (Draw bounding box)</span>
+              <span>ประเภทปัจจุบัน: <strong style={{ color: getClassColor(currentClass) }}>{currentClass}</strong></span>
             </div>
           </div>
 
-          {/* Right: Class Manager & Bounding Box List ("สร้างออปเจค") */}
-          <div className="card" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '16px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-              <h4 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>สร้างและเลือกออปเจค</h4>
-              <button
-                className="btn btn-sm btn-primary"
-                onClick={handleSaveManual}
-                disabled={saving}
-              >
-                <Save size={13} /> {saving ? 'บันทึก...' : 'บันทึก'}
-              </button>
+          {/* Column 3: จัดประเภทออปเจค & บันทึกไฟล์ GT */}
+          <div
+            className="card"
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              padding: '16px',
+            }}
+          >
+            {/* Header: Ground Truth Action */}
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '12px',
+              }}
+            >
+              <h4 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                จัดประเภทออปเจค & บันทึก GT
+              </h4>
+              {saveFeedback && (
+                <span className="badge badge-success" style={{ fontSize: '11px' }}>
+                  <Check size={12} /> บันทึกแล้ว
+                </span>
+              )}
             </div>
 
-            {/* Create / Select Object Class */}
-            <div className="form-group">
-              <label className="form-label">คลาสที่กำลังใช้งาน (Active Class)</label>
+            {/* Section 1: Object Class Chips */}
+            <div className="form-group" style={{ marginBottom: '12px' }}>
+              <label className="form-label" style={{ marginBottom: '6px' }}>
+                เลือกประเภทออปเจค (Active Class)
+              </label>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
-                {classList.map((c) => (
-                  <span
-                    key={c}
-                    onClick={() => setCurrentClass(c)}
-                    style={{
-                      padding: '4px 10px',
-                      borderRadius: 'var(--radius-full)',
-                      fontSize: '11px',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      backgroundColor: currentClass === c ? 'var(--accent-primary)' : '#f1f5f9',
-                      color: currentClass === c ? '#fff' : 'var(--text-secondary)',
-                      border: `1px solid ${currentClass === c ? 'var(--accent-primary)' : 'var(--border-color)'}`,
-                      transition: 'all 0.15s ease',
-                    }}
-                  >
-                    {c}
-                  </span>
-                ))}
+                {classList.map((c) => {
+                  const isCur = currentClass === c;
+                  const col = getClassColor(c);
+                  return (
+                    <span
+                      key={c}
+                      onClick={() => setCurrentClass(c)}
+                      style={{
+                        padding: '4px 10px',
+                        borderRadius: 'var(--radius-full)',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        backgroundColor: isCur ? col : '#f1f5f9',
+                        color: isCur ? '#ffffff' : 'var(--text-secondary)',
+                        border: `1px solid ${isCur ? col : 'var(--border-color)'}`,
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      {c}
+                    </span>
+                  );
+                })}
               </div>
 
+              {/* Add New Class Form */}
               <form onSubmit={handleAddClass} style={{ display: 'flex', gap: '6px' }}>
                 <input
                   className="form-control"
-                  style={{ flex: 1, padding: '6px 8px', fontSize: '12px' }}
-                  placeholder="พิมพ์ชื่อวัตถุใหม่ เช่น car, defect..."
+                  style={{ flex: 1, padding: '5px 8px', fontSize: '12px' }}
+                  placeholder="พิมพ์ชื่อประเภทใหม่ เช่น car, defect..."
                   value={newClassName}
                   onChange={(e) => setNewClassName(e.target.value)}
                 />
-                <button type="submit" className="btn btn-sm btn-secondary" title="เพิ่มออปเจค">
-                  <Plus size={13} />
+                <button type="submit" className="btn btn-sm btn-secondary" title="เพิ่มประเภทใหม่">
+                  <Plus size={13} /> เพิ่ม
                 </button>
               </form>
             </div>
 
-            <hr style={{ borderColor: 'var(--border-color)', margin: '12px 0' }} />
+            <hr style={{ borderColor: 'var(--border-color)', margin: '10px 0' }} />
 
-            {/* Current Drawn Bounding Boxes */}
-            <h5 style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
-              กรอบบนภาพนี้ ({annotations.length})
-            </h5>
-            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              {annotations.length === 0 ? (
-                <div style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', marginTop: '20px' }}>
-                  ยังไม่มีการตีกรอบ<br />คลิกลากเมาส์บนภาพเพื่อตีกรอบ
-                </div>
-              ) : (
-                annotations.map((ann, idx) => (
-                  <div
-                    key={ann.id || idx}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '6px 10px',
-                      borderRadius: 'var(--radius-sm)',
-                      backgroundColor: '#f8fafc',
-                      border: '1px solid var(--border-color)',
-                      fontSize: '12px',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Tag size={12} color="var(--accent-primary)" />
-                      <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{ann.label}</span>
-                    </div>
-                    <button
-                      onClick={() => handleDeleteAnnotation(idx)}
-                      style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer' }}
-                      title="ลบกรอบนี้"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                ))
+            {/* Section 2: Current Image Boxes List */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <h5 style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                กรอบในรูปนี้ ({annotations.length})
+              </h5>
+              {annotations.length > 0 && (
+                <button
+                  onClick={handleDownloadSingleGt}
+                  className="btn btn-sm btn-secondary"
+                  style={{ fontSize: '11px', padding: '2px 6px' }}
+                  title="ดาวน์โหลดไฟล์ .txt ของภาพนี้ลงเครื่อง"
+                >
+                  <Download size={11} /> โหลด .txt
+                </button>
               )}
             </div>
 
-            {/* Quick Proceed button on bottom right */}
-            <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: '1px solid var(--border-color)' }}>
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+              {annotations.length === 0 ? (
+                <div
+                  style={{
+                    fontSize: '12px',
+                    color: 'var(--text-muted)',
+                    textAlign: 'center',
+                    marginTop: '24px',
+                    lineHeight: 1.6,
+                  }}
+                >
+                  ยังไม่มีการตีกรอบในรูปนี้<br />
+                  คลิกแล้วลากเมาส์บนรูปภาพเพื่อตีกรอบ
+                </div>
+              ) : (
+                annotations.map((ann, idx) => {
+                  const col = getClassColor(ann.label);
+                  return (
+                    <div
+                      key={ann.id || idx}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '6px 10px',
+                        borderRadius: 'var(--radius-sm)',
+                        backgroundColor: '#f8fafc',
+                        border: `1px solid ${col}44`,
+                        fontSize: '12px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span
+                          style={{
+                            width: '9px',
+                            height: '9px',
+                            borderRadius: '50%',
+                            backgroundColor: col,
+                          }}
+                        />
+                        <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{ann.label}</span>
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                          ({(ann.x_max - ann.x_min).toFixed(2)} &times; {(ann.y_max - ann.y_min).toFixed(2)})
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteAnnotation(idx)}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: '#ef4444',
+                          cursor: 'pointer',
+                        }}
+                        title="ลบกรอบนี้"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Section 3: Save GT & Next Actions */}
+            <div
+              style={{
+                marginTop: '12px',
+                paddingTop: '12px',
+                borderTop: '1px solid var(--border-color)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+              }}
+            >
               <button
                 className="btn btn-primary"
+                style={{ width: '100%', fontWeight: 600 }}
+                onClick={() => handleSaveGroundTruth(false)}
+                disabled={savingGt}
+              >
+                <Save size={14} /> {savingGt ? 'กำลังบันทึก GT...' : 'บันทึกไฟล์ GT รูปนี้'}
+              </button>
+
+              <button
+                className="btn btn-secondary"
+                style={{ width: '100%', fontWeight: 500 }}
+                onClick={() => handleSaveGroundTruth(true)}
+                disabled={savingGt || selectedImageIndex >= images.length - 1}
+              >
+                บันทึก GT และไปรูปถัดไป &rarr;
+              </button>
+
+              <button
+                className="btn"
                 style={{
                   width: '100%',
+                  marginTop: '4px',
                   background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                  color: '#ffffff',
                   fontWeight: 600,
                   boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)',
                 }}
-                onClick={() => onProceedToTraining && onProceedToTraining(activeDataset)}
+                onClick={handlePackageAndTrain}
+                disabled={images.length === 0 || bundling}
               >
-                <Play size={14} /> ไปสู่หน้าการเทรนโมเดล
+                <Play size={14} /> มัดรวมไฟล์ GT และไปเทรนโมเดล
               </button>
             </div>
           </div>

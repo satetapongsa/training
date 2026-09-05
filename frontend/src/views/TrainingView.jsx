@@ -118,7 +118,7 @@ export default function TrainingView({
 
     try {
       const run = await startTraining({
-        project_id: Number(activeProject?.id),
+        project_id: activeProject?.id ? Number(activeProject.id) : null,
         dataset_id: Number(selectedDatasetId),
         model_name: `run_${Date.now()}`,
         architecture: modelType.replace('.pt', ''),

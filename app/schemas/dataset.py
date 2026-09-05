@@ -12,7 +12,7 @@ class DatasetBase(BaseModel):
 
 
 class DatasetCreate(DatasetBase):
-    project_id: int
+    project_id: Optional[int] = None
 
 
 class DatasetSplitRequest(BaseModel):

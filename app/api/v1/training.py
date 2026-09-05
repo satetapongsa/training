@@ -65,11 +65,20 @@ async def start_training(
     payload: TrainingJobStartRequest,
     db: AsyncSession = Depends(get_database_session),
 ):
-    # Verify project & dataset
-    proj_res = await db.execute(select(Project).filter(Project.id == payload.project_id))
-    project = proj_res.scalar_one_or_none()
+    # Verify or auto-create project
+    project = None
+    if payload.project_id:
+        proj_res = await db.execute(select(Project).filter(Project.id == payload.project_id))
+        project = proj_res.scalar_one_or_none()
     if not project:
-        raise HTTPException(status_code=404, detail="Project not found.")
+        proj_first = await db.execute(select(Project).order_by(Project.id))
+        project = proj_first.scalars().first()
+        if not project:
+            project = Project(name="Workspace", task_type="detection")
+            db.add(project)
+            await db.commit()
+            await db.refresh(project)
+        payload.project_id = project.id
 
     ds_res = await db.execute(
         select(Dataset).options(selectinload(Dataset.images).selectinload(Image.annotations)).filter(Dataset.id == payload.dataset_id)

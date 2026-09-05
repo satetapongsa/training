@@ -21,7 +21,7 @@ class TrainingConfigSchema(BaseModel):
 
 
 class TrainingJobStartRequest(BaseModel):
-    project_id: int
+    project_id: Optional[int] = None
     dataset_id: int
     model_name: str = Field(..., min_length=2, max_length=100)
     architecture: str = Field("yolo11n", min_length=2, max_length=100)

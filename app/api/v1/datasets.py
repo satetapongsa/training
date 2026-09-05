@@ -40,10 +40,20 @@ async def list_datasets(
 
 @router.post("", response_model=DatasetResponse, status_code=status.HTTP_201_CREATED)
 async def create_dataset(payload: DatasetCreate, db: AsyncSession = Depends(get_database_session)):
-    # Verify project exists
-    proj_res = await db.execute(select(Project).filter(Project.id == payload.project_id))
-    if not proj_res.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Project not found.")
+    # Verify or auto-create project
+    project = None
+    if payload.project_id:
+        proj_res = await db.execute(select(Project).filter(Project.id == payload.project_id))
+        project = proj_res.scalar_one_or_none()
+    if not project:
+        proj_first = await db.execute(select(Project).order_by(Project.id))
+        project = proj_first.scalars().first()
+        if not project:
+            project = Project(name="Workspace", task_type=payload.task_type or "detection")
+            db.add(project)
+            await db.commit()
+            await db.refresh(project)
+        payload.project_id = project.id
 
     dataset = Dataset(
         project_id=payload.project_id,
