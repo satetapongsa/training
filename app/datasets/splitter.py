@@ -99,10 +99,15 @@ class DatasetSplitter:
             label_path = target_dir / split / "labels" / f"{label_stem}.txt"
             with open(label_path, "w", encoding="utf-8") as f:
                 for a in annots:
-                    line = YOLOAnnotationHelper.format_line(
-                        a.get("class_id", 0), a["bbox_x"], a["bbox_y"], a["bbox_w"], a["bbox_h"]
-                    )
-                    f.write(f"{line}\n")
+                    seg = a.get("segmentation")
+                    if seg and len(seg) >= 3:
+                        pts_str = " ".join(f"{float(pt[0]):.6f} {float(pt[1]):.6f}" for pt in seg)
+                        f.write(f"{a.get('class_id', 0)} {pts_str}\n")
+                    else:
+                        line = YOLOAnnotationHelper.format_line(
+                            a.get("class_id", 0), a["bbox_x"], a["bbox_y"], a["bbox_w"], a["bbox_h"]
+                        )
+                        f.write(f"{line}\n")
 
         # Determine actual valid paths for YAML
         val_imgs = [p for p in (target_dir / "val" / "images").glob("*") if not p.name.startswith(".")]

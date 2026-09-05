@@ -65,10 +65,27 @@ class KDelDataset(Dataset):
                     if len(parts) >= 5:
                         try:
                             cid = int(parts[0])
-                            cx = float(parts[1])
-                            cy = float(parts[2])
-                            w = float(parts[3])
-                            h = float(parts[4])
+                            if len(parts) == 5:
+                                cx = float(parts[1])
+                                cy = float(parts[2])
+                                w = float(parts[3])
+                                h = float(parts[4])
+                            else:
+                                # Polygon coordinates: cid x1 y1 x2 y2 ... xn yn
+                                coords = [float(x) for x in parts[1:]]
+                                xs = coords[0::2]
+                                ys = coords[1::2]
+                                if xs and ys:
+                                    xmin = min(xs)
+                                    xmax = max(xs)
+                                    ymin = min(ys)
+                                    ymax = max(ys)
+                                    cx = (xmin + xmax) / 2.0
+                                    cy = (ymin + ymax) / 2.0
+                                    w = max(0.001, xmax - xmin)
+                                    h = max(0.001, ymax - ymin)
+                                else:
+                                    continue
                             boxes.append([cid, cx, cy, w, h])
                         except ValueError:
                             continue

@@ -36,6 +36,7 @@ async def create_annotation(payload: AnnotationCreate, db: AsyncSession = Depend
         bbox_y=payload.bbox_y,
         bbox_w=payload.bbox_w,
         bbox_h=payload.bbox_h,
+        segmentation=payload.segmentation,
         confidence=payload.confidence,
     )
     db.add(annot)
@@ -65,6 +66,7 @@ async def batch_save_annotations(payload: BatchAnnotationsUpdate, db: AsyncSessi
             bbox_y=a.bbox_y,
             bbox_w=a.bbox_w,
             bbox_h=a.bbox_h,
+            segmentation=a.segmentation,
             confidence=a.confidence,
         )
         db.add(annot)

@@ -138,6 +138,7 @@ export async function saveAnnotations(imageId, annotations) {
           bbox_w: Math.min(1.0, Math.max(0.001, width)),
           bbox_h: Math.min(1.0, Math.max(0.001, height)),
           confidence: a.confidence !== undefined ? Number(a.confidence) : 1.0,
+          segmentation: a.segmentation || (a.points ? a.points : null),
         };
       }),
     }),

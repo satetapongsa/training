@@ -17,6 +17,10 @@ import {
   Eye,
   Check,
   Zap,
+  Square,
+  Pentagon,
+  Undo2,
+  X,
 } from 'lucide-react';
 import {
   createDataset,
@@ -66,10 +70,13 @@ export default function StudioView({
   const [bundling, setBundling] = useState(false);
 
   // Canvas drawing state
+  const [drawMode, setDrawMode] = useState('polygon'); // 'polygon' (คลิกแต่ละมุมรอบวัตถุ ทุกแนว ทุกมุม เอียงได้) or 'box' (สี่เหลี่ยม)
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
   const [currentBox, setCurrentBox] = useState(null);
   const [selectedBoxIndex, setSelectedBoxIndex] = useState(null);
+  const [polygonPoints, setPolygonPoints] = useState([]); // [{x, y}, ...]
+  const [cursorPos, setCursorPos] = useState(null); // {x, y} for live connecting guide line
 
   // Upload state
   const [uploading, setUploading] = useState(false);
@@ -107,6 +114,10 @@ export default function StudioView({
 
   // Load annotations when selected image changes
   useEffect(() => {
+    setPolygonPoints([]);
+    setCursorPos(null);
+    setCurrentBox(null);
+
     if (!selectedImage) {
       setAnnotations([]);
       return;
@@ -126,6 +137,7 @@ export default function StudioView({
           y_min: Math.max(0, cy - h / 2),
           x_max: Math.min(1, cx + w / 2),
           y_max: Math.min(1, cy + h / 2),
+          segmentation: ann.segmentation || null,
         };
       });
       setAnnotations(formatted);
@@ -145,6 +157,7 @@ export default function StudioView({
             y_min: Math.max(0, ann.bbox_y - ann.bbox_h / 2),
             x_max: Math.min(1, ann.bbox_x + ann.bbox_w / 2),
             y_max: Math.min(1, ann.bbox_y + ann.bbox_h / 2),
+            segmentation: ann.segmentation || null,
           }));
           setAnnotations(formatted);
           formatted.forEach((f) => {
@@ -171,23 +184,7 @@ export default function StudioView({
     }
   };
 
-  // Keyboard navigation for image-by-image inspection
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      // Don't intercept if user is typing in an input
-      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
 
-      if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        handlePrevImage();
-      } else if (e.key === 'ArrowRight') {
-        e.preventDefault();
-        handleNextImage();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedImageIndex, images.length]);
 
   // --- LOCAL FOLDER & IMAGE INGESTION ---
   const handleIngestFiles = async (fileList) => {
@@ -234,20 +231,47 @@ export default function StudioView({
           const parts = line.trim().split(/\s+/);
           if (parts.length >= 5) {
             const classIdx = parseInt(parts[0], 10);
-            const cx = parseFloat(parts[1]);
-            const cy = parseFloat(parts[2]);
-            const w = parseFloat(parts[3]);
-            const h = parseFloat(parts[4]);
-            if (!isNaN(cx) && !isNaN(cy) && !isNaN(w) && !isNaN(h)) {
-              const labelName = classList[classIdx] || `class_${classIdx}`;
-              initialAnnots.push({
-                id: Math.random().toString(),
-                label: labelName,
-                x_min: Math.max(0, cx - w / 2),
-                y_min: Math.max(0, cy - h / 2),
-                x_max: Math.min(1, cx + w / 2),
-                y_max: Math.min(1, cy + h / 2),
-              });
+            const labelName = classList[classIdx] || `class_${classIdx}`;
+            if (parts.length === 5) {
+              const cx = parseFloat(parts[1]);
+              const cy = parseFloat(parts[2]);
+              const w = parseFloat(parts[3]);
+              const h = parseFloat(parts[4]);
+              if (!isNaN(cx) && !isNaN(cy) && !isNaN(w) && !isNaN(h)) {
+                initialAnnots.push({
+                  id: Math.random().toString(),
+                  label: labelName,
+                  x_min: Math.max(0, cx - w / 2),
+                  y_min: Math.max(0, cy - h / 2),
+                  x_max: Math.min(1, cx + w / 2),
+                  y_max: Math.min(1, cy + h / 2),
+                  segmentation: null,
+                });
+              }
+            } else {
+              // Polygon coordinates: classIdx x1 y1 x2 y2 ...
+              const coords = parts.slice(1).map(Number);
+              const xs = coords.filter((_, i) => i % 2 === 0);
+              const ys = coords.filter((_, i) => i % 2 === 1);
+              if (xs.length >= 3 && ys.length >= 3) {
+                const seg = [];
+                for (let i = 0; i < Math.min(xs.length, ys.length); i++) {
+                  seg.push([xs[i], ys[i]]);
+                }
+                const minX = Math.min(...xs);
+                const maxX = Math.max(...xs);
+                const minY = Math.min(...ys);
+                const maxY = Math.max(...ys);
+                initialAnnots.push({
+                  id: Math.random().toString(),
+                  label: labelName,
+                  x_min: Math.max(0, minX),
+                  y_min: Math.max(0, minY),
+                  x_max: Math.min(1, maxX),
+                  y_max: Math.min(1, maxY),
+                  segmentation: seg,
+                });
+              }
             }
           }
         }
@@ -365,12 +389,11 @@ export default function StudioView({
   };
 
   // --- CANVAS BOUNDING BOX RENDERING & INTERACTION (ตีกรอบ) ---
+  // --- CANVAS BOUNDING BOX & MULTI-CORNER POLYGON RENDERING & INTERACTION ---
   useEffect(() => {
     if (!selectedImage || !canvasRef.current) return;
 
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-
     const img = new Image();
     const imageSrc =
       selectedImage.localUrl ||
@@ -384,10 +407,13 @@ export default function StudioView({
       imageObjRef.current = img;
       canvas.width = img.naturalWidth || 800;
       canvas.height = img.naturalHeight || 600;
-
       redrawCanvas();
     };
-  }, [selectedImage, annotations, currentBox, selectedBoxIndex]);
+  }, [selectedImage]);
+
+  useEffect(() => {
+    redrawCanvas();
+  }, [annotations, currentBox, selectedBoxIndex, drawMode, polygonPoints, cursorPos, currentClass]);
 
   const redrawCanvas = () => {
     const canvas = canvasRef.current;
@@ -398,38 +424,87 @@ export default function StudioView({
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-    // Draw existing annotations
+    // 1. Draw existing annotations (both polygon contours and bounding boxes)
     annotations.forEach((ann, idx) => {
       const isSelected = selectedBoxIndex === idx;
-      const x = ann.x_min * canvas.width;
-      const y = ann.y_min * canvas.height;
-      const w = (ann.x_max - ann.x_min) * canvas.width;
-      const h = (ann.y_max - ann.y_min) * canvas.height;
       const color = getClassColor(ann.label);
 
-      // Bounding Box Rect
-      ctx.strokeStyle = color;
-      ctx.lineWidth = isSelected ? 4 : 2.5;
-      ctx.fillStyle = `${color}22`; // semi-transparent fill
-      ctx.fillRect(x, y, w, h);
-      ctx.strokeRect(x, y, w, h);
+      if (ann.segmentation && ann.segmentation.length >= 3) {
+        // Multi-corner polygon contour (ทุกมุม ทุกแนว ทั้งเอียง)
+        const pts = ann.segmentation.map((pt) => ({
+          x: pt[0] * canvas.width,
+          y: pt[1] * canvas.height,
+        }));
 
-      // Label Tag Chip
-      const labelText = ann.label || 'object';
-      ctx.font = 'bold 13px Inter, sans-serif';
-      const textWidth = ctx.measureText(labelText).width;
-      const badgeH = 22;
-      const badgeW = textWidth + 16;
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < pts.length; i++) {
+          ctx.lineTo(pts[i].x, pts[i].y);
+        }
+        ctx.closePath();
 
-      ctx.fillStyle = color;
-      ctx.fillRect(x, Math.max(0, y - badgeH), badgeW, badgeH);
+        ctx.fillStyle = isSelected ? `${color}45` : `${color}25`;
+        ctx.fill();
 
-      ctx.fillStyle = '#ffffff';
-      ctx.fillText(labelText, x + 8, Math.max(15, y - 6));
+        ctx.strokeStyle = color;
+        ctx.lineWidth = isSelected ? 4 : 2.5;
+        ctx.stroke();
+
+        // Corner vertex dots
+        pts.forEach((pt) => {
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2);
+          ctx.fillStyle = '#ffffff';
+          ctx.fill();
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        });
+
+        // Label Tag Chip
+        const labelText = ann.label || 'object';
+        ctx.font = 'bold 13px Inter, sans-serif';
+        const textWidth = ctx.measureText(labelText).width;
+        const badgeH = 22;
+        const badgeW = textWidth + 18;
+
+        const anchorX = Math.min(...pts.map((p) => p.x));
+        const anchorY = Math.min(...pts.map((p) => p.y));
+
+        ctx.fillStyle = color;
+        ctx.fillRect(anchorX, Math.max(0, anchorY - badgeH), badgeW, badgeH);
+
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(labelText, anchorX + 8, Math.max(15, anchorY - 6));
+      } else {
+        // Standard Bounding Box Rect
+        const x = ann.x_min * canvas.width;
+        const y = ann.y_min * canvas.height;
+        const w = (ann.x_max - ann.x_min) * canvas.width;
+        const h = (ann.y_max - ann.y_min) * canvas.height;
+
+        ctx.strokeStyle = color;
+        ctx.lineWidth = isSelected ? 4 : 2.5;
+        ctx.fillStyle = `${color}22`;
+        ctx.fillRect(x, y, w, h);
+        ctx.strokeRect(x, y, w, h);
+
+        const labelText = ann.label || 'object';
+        ctx.font = 'bold 13px Inter, sans-serif';
+        const textWidth = ctx.measureText(labelText).width;
+        const badgeH = 22;
+        const badgeW = textWidth + 16;
+
+        ctx.fillStyle = color;
+        ctx.fillRect(x, Math.max(0, y - badgeH), badgeW, badgeH);
+
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(labelText, x + 8, Math.max(15, y - 6));
+      }
     });
 
-    // Draw currently actively dragged box
-    if (currentBox && currentBox.w > 0 && currentBox.h > 0) {
+    // 2. Draw currently actively dragged box (in 'box' mode)
+    if (drawMode === 'box' && currentBox && currentBox.w > 0 && currentBox.h > 0) {
       const color = getClassColor(currentClass);
       ctx.strokeStyle = color;
       ctx.lineWidth = 2.5;
@@ -439,12 +514,70 @@ export default function StudioView({
       ctx.strokeRect(currentBox.x, currentBox.y, currentBox.w, currentBox.h);
       ctx.setLineDash([]);
 
-      // Badge
       ctx.font = 'bold 12px Inter, sans-serif';
       ctx.fillStyle = color;
       ctx.fillRect(currentBox.x, Math.max(0, currentBox.y - 20), ctx.measureText(currentClass).width + 14, 20);
       ctx.fillStyle = '#ffffff';
       ctx.fillText(currentClass, currentBox.x + 7, Math.max(14, currentBox.y - 5));
+    }
+
+    // 3. Draw active multi-corner polygon being created (in 'polygon' mode)
+    if (drawMode === 'polygon' && polygonPoints.length > 0) {
+      const color = getClassColor(currentClass);
+
+      // Connecting edges between placed vertices
+      ctx.beginPath();
+      ctx.moveTo(polygonPoints[0].x, polygonPoints[0].y);
+      for (let i = 1; i < polygonPoints.length; i++) {
+        ctx.lineTo(polygonPoints[i].x, polygonPoints[i].y);
+      }
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+
+      // Dynamic rubberband guide line from last point to cursor
+      if (cursorPos) {
+        ctx.beginPath();
+        ctx.setLineDash([6, 4]);
+        const lastPt = polygonPoints[polygonPoints.length - 1];
+        ctx.moveTo(lastPt.x, lastPt.y);
+        ctx.lineTo(cursorPos.x, cursorPos.y);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // Draw numbered circle handles on vertices
+      polygonPoints.forEach((pt, i) => {
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, 6, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.font = 'bold 10px Inter, sans-serif';
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(String(i + 1), pt.x + 8, pt.y - 4);
+      });
+
+      // Highlight first point if cursor is close to it to close the polygon
+      if (polygonPoints.length >= 3 && cursorPos) {
+        const dist = Math.hypot(cursorPos.x - polygonPoints[0].x, cursorPos.y - polygonPoints[0].y);
+        if (dist <= 20) {
+          ctx.beginPath();
+          ctx.arc(polygonPoints[0].x, polygonPoints[0].y, 14, 0, Math.PI * 2);
+          ctx.strokeStyle = '#10b981';
+          ctx.lineWidth = 3;
+          ctx.stroke();
+
+          ctx.font = 'bold 11px Inter, sans-serif';
+          ctx.fillStyle = '#10b981';
+          ctx.fillText('คลิกเพื่อปิดกรอบ', polygonPoints[0].x + 12, polygonPoints[0].y + 14);
+        }
+      }
     }
   };
 
@@ -460,36 +593,22 @@ export default function StudioView({
     };
   };
 
-  const handleMouseDown = (e) => {
-    if (!selectedImage) return;
-    const pos = getCanvasMousePos(e);
-    setIsDrawing(true);
-    setStartPos(pos);
-    setCurrentBox({ x: pos.x, y: pos.y, w: 0, h: 0 });
-    setSelectedBoxIndex(null);
-  };
-
-  const handleMouseMove = (e) => {
-    if (!isDrawing) return;
-    const pos = getCanvasMousePos(e);
-    const x = Math.min(startPos.x, pos.x);
-    const y = Math.min(startPos.y, pos.y);
-    const w = Math.abs(pos.x - startPos.x);
-    const h = Math.abs(pos.y - startPos.y);
-    setCurrentBox({ x, y, w, h });
-  };
-
-  const handleMouseUp = () => {
-    if (!isDrawing) return;
-    setIsDrawing(false);
-
+  const finishPolygon = () => {
     const canvas = canvasRef.current;
-    if (canvas && currentBox && currentBox.w > 10 && currentBox.h > 10) {
-      const x_min = Math.max(0, currentBox.x / canvas.width);
-      const y_min = Math.max(0, currentBox.y / canvas.height);
-      const x_max = Math.min(1, (currentBox.x + currentBox.w) / canvas.width);
-      const y_max = Math.min(1, (currentBox.y + currentBox.h) / canvas.height);
+    if (!canvas || polygonPoints.length < 3) return;
 
+    const normPoints = polygonPoints.map((p) => [
+      Math.max(0, Math.min(1, p.x / canvas.width)),
+      Math.max(0, Math.min(1, p.y / canvas.height)),
+    ]);
+    const xs = normPoints.map((p) => p[0]);
+    const ys = normPoints.map((p) => p[1]);
+    const x_min = Math.min(...xs);
+    const x_max = Math.max(...xs);
+    const y_min = Math.min(...ys);
+    const y_max = Math.max(...ys);
+
+    if (x_max - x_min > 0.005 && y_max - y_min > 0.005) {
       const newAnn = {
         id: Math.random().toString(),
         label: currentClass,
@@ -497,24 +616,120 @@ export default function StudioView({
         y_min,
         x_max,
         y_max,
+        segmentation: normPoints,
       };
 
       const updated = [...annotations, newAnn];
       setAnnotations(updated);
 
-      // Update in images list
       setImages((prev) =>
         prev.map((img, idx) =>
           idx === selectedImageIndex ? { ...img, annotations: updated, is_annotated: true } : img
         )
       );
 
-      // Auto-save if image has a database ID
       if (selectedImage?.id) {
         saveAnnotations(selectedImage.id, updated).catch(console.error);
       }
     }
-    setCurrentBox(null);
+
+    setPolygonPoints([]);
+    setCursorPos(null);
+  };
+
+  const undoLastPolygonPoint = () => {
+    setPolygonPoints((prev) => prev.slice(0, -1));
+  };
+
+  const cancelCurrentPolygon = () => {
+    setPolygonPoints([]);
+    setCursorPos(null);
+  };
+
+  const handleCanvasClick = (e) => {
+    if (!selectedImage) return;
+    const pos = getCanvasMousePos(e);
+
+    if (drawMode === 'polygon') {
+      if (polygonPoints.length >= 3) {
+        const dist = Math.hypot(pos.x - polygonPoints[0].x, pos.y - polygonPoints[0].y);
+        if (dist <= 20) {
+          finishPolygon();
+          return;
+        }
+      }
+      setPolygonPoints((prev) => [...prev, pos]);
+      setSelectedBoxIndex(null);
+    }
+  };
+
+  const handleMouseDown = (e) => {
+    if (!selectedImage) return;
+    if (drawMode === 'box') {
+      const pos = getCanvasMousePos(e);
+      setIsDrawing(true);
+      setStartPos(pos);
+      setCurrentBox({ x: pos.x, y: pos.y, w: 0, h: 0 });
+      setSelectedBoxIndex(null);
+    }
+  };
+
+  const handleMouseMove = (e) => {
+    const pos = getCanvasMousePos(e);
+    if (drawMode === 'polygon') {
+      setCursorPos(pos);
+    } else if (drawMode === 'box' && isDrawing) {
+      const x = Math.min(startPos.x, pos.x);
+      const y = Math.min(startPos.y, pos.y);
+      const w = Math.abs(pos.x - startPos.x);
+      const h = Math.abs(pos.y - startPos.y);
+      setCurrentBox({ x, y, w, h });
+    }
+  };
+
+  const handleMouseUp = () => {
+    if (drawMode === 'box' && isDrawing) {
+      setIsDrawing(false);
+      const canvas = canvasRef.current;
+      if (canvas && currentBox && currentBox.w > 10 && currentBox.h > 10) {
+        const x_min = Math.max(0, currentBox.x / canvas.width);
+        const y_min = Math.max(0, currentBox.y / canvas.height);
+        const x_max = Math.min(1, (currentBox.x + currentBox.w) / canvas.width);
+        const y_max = Math.min(1, (currentBox.y + currentBox.h) / canvas.height);
+
+        const newAnn = {
+          id: Math.random().toString(),
+          label: currentClass,
+          x_min,
+          y_min,
+          x_max,
+          y_max,
+          segmentation: null,
+        };
+
+        const updated = [...annotations, newAnn];
+        setAnnotations(updated);
+
+        // Update in images list
+        setImages((prev) =>
+          prev.map((img, idx) =>
+            idx === selectedImageIndex ? { ...img, annotations: updated, is_annotated: true } : img
+          )
+        );
+
+        // Auto-save if image has a database ID
+        if (selectedImage?.id) {
+          saveAnnotations(selectedImage.id, updated).catch(console.error);
+        }
+      }
+      setCurrentBox(null);
+    }
+  };
+
+  const handleDoubleClick = () => {
+    if (drawMode === 'polygon' && polygonPoints.length >= 3) {
+      finishPolygon();
+    }
   };
 
   const handleDeleteAnnotation = (index) => {
@@ -529,6 +744,32 @@ export default function StudioView({
       saveAnnotations(selectedImage.id, updated).catch(console.error);
     }
   };
+
+  // Keyboard navigation & shortcuts (image switching & polygon controls)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        handlePrevImage();
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        handleNextImage();
+      } else if ((e.key === 'Enter' || e.key === ' ') && drawMode === 'polygon' && polygonPoints.length >= 3) {
+        e.preventDefault();
+        finishPolygon();
+      } else if (e.key === 'Backspace' && drawMode === 'polygon' && polygonPoints.length > 0) {
+        e.preventDefault();
+        undoLastPolygonPoint();
+      } else if (e.key === 'Escape' && drawMode === 'polygon' && polygonPoints.length > 0) {
+        e.preventDefault();
+        cancelCurrentPolygon();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedImageIndex, images.length, drawMode, polygonPoints.length, currentClass]);
 
   // --- SAVE GROUND TRUTH (บันทึกเป็นไฟล์ GT) ---
   const handleSaveGroundTruth = async (advanceNext = false) => {
@@ -564,11 +805,15 @@ export default function StudioView({
   const handleDownloadSingleGt = () => {
     if (!selectedImage) return;
     const lines = annotations.map((ann) => {
+      const classId = getClassId(ann.label);
+      if (ann.segmentation && ann.segmentation.length >= 3) {
+        const segStr = ann.segmentation.map((pt) => `${pt[0].toFixed(6)} ${pt[1].toFixed(6)}`).join(' ');
+        return `${classId} ${segStr}`;
+      }
       const cx = (ann.x_min + ann.x_max) / 2;
       const cy = (ann.y_min + ann.y_max) / 2;
       const w = ann.x_max - ann.x_min;
       const h = ann.y_max - ann.y_min;
-      const classId = getClassId(ann.label);
       return `${classId} ${cx.toFixed(6)} ${cy.toFixed(6)} ${w.toFixed(6)} ${h.toFixed(6)}`;
     });
 
@@ -1011,6 +1256,8 @@ export default function StudioView({
                 marginBottom: '10px',
                 paddingBottom: '8px',
                 borderBottom: '1px solid var(--border-color)',
+                flexWrap: 'wrap',
+                gap: '8px',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1022,7 +1269,54 @@ export default function StudioView({
                 </span>
               </div>
 
-              <div style={{ display: 'flex', gap: '6px' }}>
+              <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                {/* Annotation Tool Mode Selector */}
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-color)',
+                    overflow: 'hidden',
+                    backgroundColor: '#ffffff',
+                  }}
+                >
+                  <button
+                    className={`btn btn-sm ${drawMode === 'polygon' ? 'btn-primary' : 'btn-ghost'}`}
+                    style={{
+                      borderRadius: 0,
+                      padding: '4px 10px',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      boxShadow: 'none',
+                    }}
+                    onClick={() => {
+                      setDrawMode('polygon');
+                      setCurrentBox(null);
+                    }}
+                    title="คลิกซ้ายทีละมุมรอบวัตถุ ได้ทุกมุม ทุกแนว ทั้งเอียง"
+                  >
+                    <Pentagon size={13} /> โหมดคลิกแต่ละมุม (ทุกแนว/เอียง)
+                  </button>
+                  <button
+                    className={`btn btn-sm ${drawMode === 'box' ? 'btn-primary' : 'btn-ghost'}`}
+                    style={{
+                      borderRadius: 0,
+                      padding: '4px 10px',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      boxShadow: 'none',
+                    }}
+                    onClick={() => {
+                      setDrawMode('box');
+                      setPolygonPoints([]);
+                      setCursorPos(null);
+                    }}
+                    title="คลิกลากตีกรอบสี่เหลี่ยม"
+                  >
+                    <Square size={13} /> โหมดสี่เหลี่ยม
+                  </button>
+                </div>
+
                 <button
                   className="btn btn-sm btn-secondary"
                   onClick={handleAutoDetect}
@@ -1034,8 +1328,12 @@ export default function StudioView({
                 </button>
                 <button
                   className="btn btn-sm btn-secondary"
-                  onClick={() => setAnnotations([])}
-                  disabled={annotations.length === 0}
+                  onClick={() => {
+                    setAnnotations([]);
+                    setPolygonPoints([]);
+                    setCursorPos(null);
+                  }}
+                  disabled={annotations.length === 0 && polygonPoints.length === 0}
                   title="ล้างกรอบทั้งหมดบนรูปนี้"
                 >
                   <Trash2 size={13} color="#ef4444" /> ล้างกรอบ
@@ -1060,9 +1358,12 @@ export default function StudioView({
               {selectedImage ? (
                 <canvas
                   ref={canvasRef}
+                  onClick={handleCanvasClick}
                   onMouseDown={handleMouseDown}
                   onMouseMove={handleMouseMove}
                   onMouseUp={handleMouseUp}
+                  onDoubleClick={handleDoubleClick}
+                  onMouseLeave={() => setCursorPos(null)}
                   style={{
                     maxWidth: '100%',
                     maxHeight: '100%',
@@ -1073,6 +1374,54 @@ export default function StudioView({
                 />
               ) : null}
             </div>
+
+            {/* Active Polygon In-Progress Action Bar */}
+            {drawMode === 'polygon' && polygonPoints.length > 0 && (
+              <div
+                style={{
+                  marginTop: '8px',
+                  padding: '6px 12px',
+                  backgroundColor: '#eef2ff',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid #c7d2fe',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  fontSize: '12px',
+                }}
+              >
+                <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
+                  กำลังตีกรอบหลายมุม: วางจุดแล้ว <strong>{polygonPoints.length}</strong> จุด
+                  {polygonPoints.length < 3 ? ' (ต้องการอย่างน้อย 3 จุด)' : ' (คลิกจุดเริ่มต้น หรือดับเบิ้ลคลิกเพื่อปิดกรอบ)'}
+                </span>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button
+                    className="btn btn-sm btn-primary"
+                    onClick={finishPolygon}
+                    disabled={polygonPoints.length < 3}
+                    style={{ padding: '3px 10px', fontSize: '11px', fontWeight: 600 }}
+                  >
+                    <Check size={12} /> ปิดกรอบนี้ (เสร็จสิ้น)
+                  </button>
+                  <button
+                    className="btn btn-sm btn-secondary"
+                    onClick={undoLastPolygonPoint}
+                    style={{ padding: '3px 8px', fontSize: '11px' }}
+                    title="ย้อนกลับจุดล่าสุด"
+                  >
+                    <Undo2 size={12} /> ย้อน 1 จุด
+                  </button>
+                  <button
+                    className="btn btn-sm btn-secondary"
+                    onClick={cancelCurrentPolygon}
+                    style={{ padding: '3px 8px', fontSize: '11px', color: '#ef4444' }}
+                    title="ยกเลิกกรอบนี้"
+                  >
+                    <X size={12} /> ยกเลิก
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Canvas Bottom Hint */}
             <div
@@ -1085,8 +1434,16 @@ export default function StudioView({
                 color: 'var(--text-muted)',
               }}
             >
-              <span>คลิกและลากเมาส์บนภาพเพื่อตีกรอบ (Draw bounding box)</span>
-              <span>ประเภทปัจจุบัน: <strong style={{ color: getClassColor(currentClass) }}>{currentClass}</strong></span>
+              {drawMode === 'polygon' ? (
+                <span>
+                  โหมดคลิกแต่ละมุม: คลิกซ้ายที่แต่ละมุมรอบวัตถุ (ได้ทุกแนว ทุกมุม เอียงได้) แล้วคลิกจุดเริ่มต้น / ดับเบิ้ลคลิก เพื่อปิดกรอบ
+                </span>
+              ) : (
+                <span>คลิกและลากเมาส์บนภาพเพื่อตีกรอบสี่เหลี่ยม (Draw bounding box)</span>
+              )}
+              <span>
+                ประเภทปัจจุบัน: <strong style={{ color: getClassColor(currentClass) }}>{currentClass}</strong>
+              </span>
             </div>
           </div>
 
@@ -1196,11 +1553,12 @@ export default function StudioView({
                   }}
                 >
                   ยังไม่มีการตีกรอบในรูปนี้<br />
-                  คลิกแล้วลากเมาส์บนรูปภาพเพื่อตีกรอบ
+                  คลิกซ้ายตามมุมรอบวัตถุ หรือลากตีกรอบ
                 </div>
               ) : (
                 annotations.map((ann, idx) => {
                   const col = getClassColor(ann.label);
+                  const isPoly = ann.segmentation && ann.segmentation.length >= 3;
                   return (
                     <div
                       key={ann.id || idx}
@@ -1215,7 +1573,7 @@ export default function StudioView({
                         fontSize: '12px',
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                         <span
                           style={{
                             width: '9px',
@@ -1225,6 +1583,20 @@ export default function StudioView({
                           }}
                         />
                         <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{ann.label}</span>
+                        {isPoly ? (
+                          <span
+                            style={{
+                              fontSize: '10px',
+                              backgroundColor: '#eef2ff',
+                              color: '#4f46e5',
+                              padding: '1px 5px',
+                              borderRadius: '3px',
+                              fontWeight: 500,
+                            }}
+                          >
+                            หลายมุม ({ann.segmentation.length} จุด)
+                          </span>
+                        ) : null}
                         <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
                           ({(ann.x_max - ann.x_min).toFixed(2)} &times; {(ann.y_max - ann.y_min).toFixed(2)})
                         </span>

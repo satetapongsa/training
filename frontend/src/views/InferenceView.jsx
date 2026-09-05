@@ -1,6 +1,36 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Crosshair, Upload, Zap, Sliders, Image as ImageIcon, Layers, CheckCircle2, AlertCircle } from 'lucide-react';
+import {
+  Crosshair,
+  Upload,
+  Zap,
+  Sliders,
+  Image as ImageIcon,
+  Layers,
+  CheckCircle2,
+  AlertCircle,
+  Tag,
+  Box,
+  Sparkles,
+} from 'lucide-react';
 import { runInference, getTrainingRuns } from '../api/client';
+
+const PALETTE = [
+  '#10b981', // emerald
+  '#4f46e5', // indigo
+  '#f59e0b', // amber
+  '#ef4444', // rose
+  '#06b6d4', // cyan
+  '#ec4899', // pink
+  '#8b5cf6', // violet
+  '#14b8a6', // teal
+  '#f97316', // orange
+];
+
+const getClassColor = (className, allClassNames = []) => {
+  const idx = allClassNames.indexOf(className);
+  if (idx === -1) return PALETTE[0];
+  return PALETTE[idx % PALETTE.length];
+};
 
 export default function InferenceView({ activeProject, preselectedModel }) {
   const [runs, setRuns] = useState([]);
@@ -73,6 +103,26 @@ export default function InferenceView({ activeProject, preselectedModel }) {
     }
   };
 
+  // Compute breakdown of detected objects by class
+  const detections = inferenceResult?.detections || [];
+  const totalCount = detections.length;
+
+  const classMap = {};
+  detections.forEach((d) => {
+    const name = d.class_name || 'object';
+    if (!classMap[name]) {
+      classMap[name] = {
+        name,
+        count: 0,
+        scores: [],
+      };
+    }
+    classMap[name].count += 1;
+    classMap[name].scores.push(d.confidence || 1.0);
+  });
+  const breakdownList = Object.values(classMap);
+  const uniqueClassNames = breakdownList.map((b) => b.name);
+
   // Render bounding boxes on Canvas
   useEffect(() => {
     if (!testImagePreview || !canvasRef.current) return;
@@ -88,8 +138,8 @@ export default function InferenceView({ activeProject, preselectedModel }) {
       ctx.drawImage(img, 0, 0);
 
       // Draw detection bounding boxes if available
-      if (inferenceResult?.detections && inferenceResult.detections.length > 0) {
-        inferenceResult.detections.forEach((det, idx) => {
+      if (detections.length > 0) {
+        detections.forEach((det) => {
           const x1 = det.box ? det.box.x1 : (det.x1 !== undefined ? det.x1 : 0);
           const y1 = det.box ? det.box.y1 : (det.y1 !== undefined ? det.y1 : 0);
           const x2 = det.box ? det.box.x2 : (det.x2 !== undefined ? det.x2 : 1);
@@ -100,9 +150,8 @@ export default function InferenceView({ activeProject, preselectedModel }) {
           const w = (x2 - x1) * canvas.width;
           const h = (y2 - y1) * canvas.height;
 
-          // Distinct color per class
-          const colors = ['#10b981', '#4f46e5', '#f59e0b', '#ef4444', '#06b6d4', '#ec4899'];
-          const color = colors[idx % colors.length];
+          const className = det.class_name || 'object';
+          const color = getClassColor(className, uniqueClassNames);
 
           // Box rect
           ctx.strokeStyle = color;
@@ -110,20 +159,22 @@ export default function InferenceView({ activeProject, preselectedModel }) {
           ctx.strokeRect(x, y, w, h);
 
           // Semi-transparent background
-          ctx.fillStyle = `${color}20`;
+          ctx.fillStyle = `${color}25`;
           ctx.fillRect(x, y, w, h);
 
           // Label chip
           const confScore = Math.round((det.confidence || 1.0) * 100);
-          const labelText = `${det.class_name || 'object'} ${confScore}%`;
-          ctx.font = 'bold 12px Inter, sans-serif';
+          const labelText = `${className} (${confScore}%)`;
+          ctx.font = 'bold 13px Inter, sans-serif';
           const textWidth = ctx.measureText(labelText).width;
+          const badgeH = 22;
+          const badgeW = textWidth + 16;
 
           ctx.fillStyle = color;
-          ctx.fillRect(x, Math.max(0, y - 22), textWidth + 14, 22);
+          ctx.fillRect(x, Math.max(0, y - badgeH), badgeW, badgeH);
 
           ctx.fillStyle = '#ffffff';
-          ctx.fillText(labelText, x + 7, Math.max(14, y - 6));
+          ctx.fillText(labelText, x + 8, Math.max(15, y - 6));
         });
       }
     };
@@ -223,62 +274,175 @@ export default function InferenceView({ activeProject, preselectedModel }) {
           </button>
         </div>
 
-        {/* Inference Telemetry Result */}
+        {/* สรุปผลการวิเคราะห์และนับจำนวนวัตถุในภาพ (Identification & Piece Count Summary) */}
         {inferenceResult && (
           <div
             style={{
-              marginTop: '4px',
-              padding: '14px',
+              padding: '16px',
               backgroundColor: '#f8fafc',
               borderRadius: 'var(--radius-sm)',
               border: '1px solid var(--border-color)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px',
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>โมเดลที่ใช้:</span>
-              <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                {inferenceResult.model_name || 'KDel 4.0'}
-              </span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>ความเร็วประมวลผล:</span>
-              <span style={{ fontSize: '12px', fontWeight: 600, color: '#10b981' }}>
-                {inferenceResult.inference_time_ms ? `${inferenceResult.inference_time_ms} ms` : '--'}
-              </span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>จำนวนวัตถุที่พบ:</span>
-              <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--accent-primary)' }}>
-                {inferenceResult.detections ? inferenceResult.detections.length : 0} รายการ
-              </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Sparkles size={16} color="var(--accent-primary)" />
+              <h4 style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+                สรุปผลการวิเคราะห์และนับจำนวนวัตถุ
+              </h4>
             </div>
 
-            {/* List detected items */}
-            {inferenceResult.detections && inferenceResult.detections.length > 0 && (
-              <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                  รายการวัตถุที่ตรวจพบ:
+            {/* Total Count & Categories Stats */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '8px',
+              }}
+            >
+              <div
+                style={{
+                  backgroundColor: '#ffffff',
+                  padding: '10px 12px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--border-color)',
+                  textAlign: 'center',
+                }}
+              >
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '2px' }}>
+                  วัตถุทั้งหมดในภาพ
                 </div>
-                {inferenceResult.detections.map((d, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      fontSize: '11px',
-                      padding: '4px 8px',
-                      backgroundColor: '#ffffff',
-                      borderRadius: '4px',
-                      border: '1px solid var(--border-color)',
-                    }}
-                  >
-                    <span>{d.class_name || 'object'}</span>
-                    <strong style={{ color: '#10b981' }}>{Math.round((d.confidence || 1.0) * 100)}%</strong>
-                  </div>
-                ))}
+                <div
+                  style={{
+                    fontSize: '22px',
+                    fontWeight: 800,
+                    color: totalCount > 0 ? 'var(--accent-primary)' : 'var(--text-muted)',
+                  }}
+                >
+                  {totalCount} <span style={{ fontSize: '13px', fontWeight: 600 }}>ชิ้น</span>
+                </div>
               </div>
-            )}
+
+              <div
+                style={{
+                  backgroundColor: '#ffffff',
+                  padding: '10px 12px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--border-color)',
+                  textAlign: 'center',
+                }}
+              >
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '2px' }}>
+                  ประเภทที่พบ
+                </div>
+                <div
+                  style={{
+                    fontSize: '22px',
+                    fontWeight: 800,
+                    color: breakdownList.length > 0 ? '#10b981' : 'var(--text-muted)',
+                  }}
+                >
+                  {breakdownList.length} <span style={{ fontSize: '13px', fontWeight: 600 }}>ชนิด</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Detailed Object Identification & Quantity List */}
+            <div>
+              <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                ในภาพคืออะไร และมีกี่ชิ้น:
+              </div>
+
+              {breakdownList.length === 0 ? (
+                <div
+                  style={{
+                    fontSize: '12px',
+                    color: 'var(--text-muted)',
+                    textAlign: 'center',
+                    padding: '12px 0',
+                    lineHeight: 1.5,
+                  }}
+                >
+                  ไม่พบวัตถุตามเกณฑ์ความมั่นใจที่กำหนด (0 ชิ้น)
+                  <br />
+                  <span style={{ fontSize: '11px' }}>ลองลดค่า Confidence หรือเลือกโมเดลที่ผ่านการเทรน</span>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {breakdownList.map((item) => {
+                    const col = getClassColor(item.name, uniqueClassNames);
+                    const avgConf = Math.round(
+                      (item.scores.reduce((a, b) => a + b, 0) / item.scores.length) * 100
+                    );
+                    return (
+                      <div
+                        key={item.name}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '8px 12px',
+                          backgroundColor: '#ffffff',
+                          borderRadius: 'var(--radius-sm)',
+                          border: `1px solid ${col}44`,
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span
+                            style={{
+                              width: '10px',
+                              height: '10px',
+                              borderRadius: '50%',
+                              backgroundColor: col,
+                              flexShrink: 0,
+                            }}
+                          />
+                          <div>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                              {item.name}
+                            </div>
+                            <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                              ความแม่นยำเฉลี่ย: {avgConf}%
+                            </div>
+                          </div>
+                        </div>
+
+                        <div
+                          style={{
+                            padding: '3px 10px',
+                            borderRadius: '12px',
+                            backgroundColor: `${col}15`,
+                            color: col,
+                            fontSize: '12px',
+                            fontWeight: 700,
+                            border: `1px solid ${col}33`,
+                          }}
+                        >
+                          {item.count} ชิ้น
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Model & Latency Telemetry */}
+            <div
+              style={{
+                paddingTop: '10px',
+                borderTop: '1px solid var(--border-color)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                fontSize: '11px',
+                color: 'var(--text-muted)',
+              }}
+            >
+              <span>โมเดล: <strong>{inferenceResult.model_name || 'KDel 4.0'}</strong></span>
+              <span>ความเร็ว: <strong style={{ color: '#10b981' }}>{inferenceResult.inference_time_ms || 0} ms</strong></span>
+            </div>
           </div>
         )}
       </div>
@@ -288,47 +452,103 @@ export default function InferenceView({ activeProject, preselectedModel }) {
         className="card"
         style={{
           display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
+          flexDirection: 'column',
           minHeight: '480px',
           overflow: 'hidden',
           backgroundColor: '#f8fafc',
+          padding: '16px',
         }}
       >
-        {testImagePreview ? (
+        {/* Inference Overview Banner Above Canvas */}
+        {inferenceResult && (
           <div
             style={{
-              maxWidth: '100%',
-              maxHeight: '100%',
-              overflow: 'auto',
+              padding: '10px 14px',
+              backgroundColor: '#ffffff',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border-color)',
+              marginBottom: '12px',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
-              padding: '12px',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '8px',
             }}
           >
-            <canvas
-              ref={canvasRef}
-              style={{
-                maxWidth: '100%',
-                maxHeight: 'calc(100vh - 180px)',
-                borderRadius: 'var(--radius-sm)',
-                boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)',
-                backgroundColor: '#ffffff',
-              }}
-            />
-          </div>
-        ) : (
-          <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '40px 20px' }}>
-            <Crosshair size={44} style={{ margin: '0 auto 12px auto', display: 'block', color: 'var(--text-muted)' }} />
-            <div style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text-primary)', marginBottom: '4px' }}>
-              ยังไม่ได้เลือกรูปภาพทดสอบ
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                ผลการตรวจจับ: พบทั้งหมด <strong>{totalCount} ชิ้น</strong>
+              </span>
+              {breakdownList.map((b) => {
+                const col = getClassColor(b.name, uniqueClassNames);
+                return (
+                  <span
+                    key={b.name}
+                    style={{
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      backgroundColor: `${col}15`,
+                      color: col,
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      border: `1px solid ${col}33`,
+                    }}
+                  >
+                    {b.name}: <strong>{b.count} ชิ้น</strong>
+                  </span>
+                );
+              })}
             </div>
-            <div style={{ fontSize: '12px' }}>
-              คลิกปุ่ม &ldquo;เลือกรูปภาพจากเครื่อง&rdquo; เพื่อนำภาพมาทดสอบการตรวจจับวัตถุด้วยโมเดล AI
+
+            <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+              ประมวลผลใน <strong>{inferenceResult.inference_time_ms || 0} ms</strong> ด้วย {inferenceResult.model_name || 'KDel 4.0'}
             </div>
           </div>
         )}
+
+        {/* Canvas Display Viewport */}
+        <div
+          style={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'auto',
+          }}
+        >
+          {testImagePreview ? (
+            <div
+              style={{
+                maxWidth: '100%',
+                maxHeight: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <canvas
+                ref={canvasRef}
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: 'calc(100vh - 220px)',
+                  borderRadius: 'var(--radius-sm)',
+                  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
+                  backgroundColor: '#ffffff',
+                }}
+              />
+            </div>
+          ) : (
+            <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '40px 20px' }}>
+              <Crosshair size={44} style={{ margin: '0 auto 12px auto', display: 'block', color: 'var(--text-muted)' }} />
+              <div style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text-primary)', marginBottom: '4px' }}>
+                ยังไม่ได้เลือกรูปภาพทดสอบ
+              </div>
+              <div style={{ fontSize: '12px' }}>
+                คลิกปุ่ม &ldquo;เลือกรูปภาพจากเครื่อง&rdquo; เพื่อนำภาพมาทดสอบการตรวจจับวัตถุด้วยโมเดล AI
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

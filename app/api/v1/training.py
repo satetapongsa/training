@@ -129,7 +129,14 @@ async def start_training(
         images_with_annots = []
         for img in dataset.images:
             ann_dicts = [
-                {"class_id": a.class_id, "bbox_x": a.bbox_x, "bbox_y": a.bbox_y, "bbox_w": a.bbox_w, "bbox_h": a.bbox_h}
+                {
+                    "class_id": a.class_id,
+                    "bbox_x": a.bbox_x,
+                    "bbox_y": a.bbox_y,
+                    "bbox_w": a.bbox_w,
+                    "bbox_h": a.bbox_h,
+                    "segmentation": a.segmentation,
+                }
                 for a in img.annotations
             ]
             images_with_annots.append(({"id": img.id, "filename": img.filename, "file_path": img.file_path, "split": img.split}, ann_dicts))
