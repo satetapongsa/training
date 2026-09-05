@@ -204,7 +204,10 @@ export default function AnnotationsView({ activeDataset, selectedImage, setSelec
         <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {images.map((img) => {
             const isSelected = selectedImage?.id === img.id;
-            const filename = img.file_path.split(/[\\/]/).pop();
+            const filename =
+              img.original_name ||
+              img.filename ||
+              (img.file_path ? img.file_path.split(/[\\/]/).pop() : `Image #${img.id}`);
             return (
               <div
                 key={img.id}

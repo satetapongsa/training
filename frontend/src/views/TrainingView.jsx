@@ -118,14 +118,17 @@ export default function TrainingView({
 
     try {
       const run = await startTraining({
-        project_id: activeProject?.id,
-        dataset_id: selectedDatasetId,
-        model_type: modelType,
-        epochs: Number(epochs),
-        batch_size: Number(batchSize),
-        learning_rate: Number(learningRate),
-        img_size: Number(imgSize),
-        device: device,
+        project_id: Number(activeProject?.id),
+        dataset_id: Number(selectedDatasetId),
+        model_name: `run_${Date.now()}`,
+        architecture: modelType.replace('.pt', ''),
+        config: {
+          epochs: Number(epochs),
+          batch_size: Number(batchSize),
+          learning_rate: Number(learningRate),
+          image_size: Number(imgSize),
+          device: device,
+        },
       });
 
       setCurrentRun(run);

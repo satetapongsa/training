@@ -65,22 +65,29 @@ export default function DatasetsView({
   const loadDatasets = async () => {
     try {
       const data = await getDatasets(activeProject?.id);
-      setDatasets(data);
-      if (data.length > 0 && !activeDataset) {
-        setActiveDataset(data[0]);
+      const list = Array.isArray(data) ? data : [];
+      setDatasets(list);
+      if (list.length > 0 && (!activeDataset || !list.some((d) => d.id === activeDataset.id))) {
+        setActiveDataset(list[0]);
       }
     } catch (err) {
       console.error('Failed to load datasets:', err);
+      setDatasets([]);
     }
   };
 
   const loadImages = async (datasetId) => {
+    if (!datasetId) {
+      setImages([]);
+      return;
+    }
     setLoading(true);
     try {
       const data = await getDatasetImages(datasetId);
-      setImages(data);
+      setImages(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error('Failed to load images:', err);
+      setImages([]);
     } finally {
       setLoading(false);
     }
@@ -385,7 +392,18 @@ export default function DatasetsView({
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '16px' }}>
             {images.map((img) => {
-              const imgUrl = img.image_url ? `${API_BASE_URL}${img.image_url}` : `${API_BASE_URL}/api/v1/datasets/images/${img.id}/file`;
+              const imgUrl = img.image_url
+                ? `${API_BASE_URL}${img.image_url}`
+                : `${API_BASE_URL}/api/v1/datasets/images/${img.id}/file`;
+              const displayName =
+                img.original_name ||
+                img.filename ||
+                (img.file_path ? img.file_path.split(/[\\/]/).pop() : `Image #${img.id}`);
+              const splitName = img.split || img.split_type || 'train';
+              const labelCount = img.annotations
+                ? img.annotations.length
+                : (img.annotations_count || 0);
+
               return (
                 <div
                   key={img.id}
@@ -412,7 +430,7 @@ export default function DatasetsView({
                   >
                     <img
                       src={imgUrl}
-                      alt={img.file_path}
+                      alt={displayName}
                       style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
                       onError={(e) => {
                         e.target.style.display = 'none';
@@ -420,30 +438,30 @@ export default function DatasetsView({
                     />
                   </div>
                   <div style={{ fontSize: '12px', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {img.file_path.split(/[\\/]/).pop()}
+                    {displayName}
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
                     <span
                       className="badge"
                       style={{
                         background:
-                          img.split_type === 'train'
+                          splitName === 'train'
                             ? 'rgba(99, 102, 241, 0.15)'
-                            : img.split_type === 'val'
+                            : splitName === 'val'
                             ? 'rgba(6, 182, 212, 0.15)'
                             : 'rgba(245, 158, 11, 0.15)',
                         color:
-                          img.split_type === 'train'
+                          splitName === 'train'
                             ? '#a5b4fc'
-                            : img.split_type === 'val'
+                            : splitName === 'val'
                             ? '#67e8f9'
                             : '#fde047',
                       }}
                     >
-                      {img.split_type || 'train'}
+                      {splitName}
                     </span>
                     <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                      {img.annotations_count || 0} labels
+                      {labelCount} labels
                     </span>
                   </div>
                 </div>

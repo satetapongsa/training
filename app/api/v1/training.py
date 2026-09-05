@@ -52,6 +52,14 @@ async def list_training_jobs(
     return resp
 
 
+@router.get("/runs", response_model=List[TrainingJobResponse])
+async def list_training_runs(
+    project_id: Optional[int] = None,
+    db: AsyncSession = Depends(get_database_session),
+):
+    return await list_training_jobs(project_id=project_id, db=db)
+
+
 @router.post("/start", response_model=TrainingJobResponse, status_code=status.HTTP_201_CREATED)
 async def start_training(
     payload: TrainingJobStartRequest,
@@ -137,6 +145,16 @@ async def get_training_job(job_id: int, db: AsyncSession = Depends(get_database_
         TrainingMetricResponse.model_validate(m) for m in job.metrics
     ]
     return resp
+
+
+@router.get("/status/{job_id}", response_model=TrainingJobResponse)
+async def get_training_status_alias(job_id: int, db: AsyncSession = Depends(get_database_session)):
+    return await get_training_job(job_id=job_id, db=db)
+
+
+@router.post("/cancel/{job_id}")
+async def cancel_training_alias(job_id: int, db: AsyncSession = Depends(get_database_session)):
+    return await stop_training(job_id=job_id, db=db)
 
 
 @router.post("/{job_id}/stop")
