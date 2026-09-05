@@ -29,6 +29,17 @@ class TrainingWorker:
     def is_job_running(self, job_id: int) -> bool:
         return job_id in self._active_threads and self._active_threads[job_id].is_alive()
 
+    def has_active_jobs(self) -> bool:
+        """Returns True if any training thread is currently alive and active."""
+        return any(t.is_alive() for t in self._active_threads.values())
+
+    def get_active_job_id(self) -> Optional[int]:
+        """Returns the ID of the currently active training job if any."""
+        for j_id, thread in self._active_threads.items():
+            if thread.is_alive():
+                return j_id
+        return None
+
     def start_job(self, job_id: int, dataset_manifest_path: Path) -> None:
         """Launches training job in a dedicated background worker thread."""
         thread = threading.Thread(

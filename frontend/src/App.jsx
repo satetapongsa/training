@@ -3,7 +3,6 @@ import Sidebar from './components/Sidebar';
 import Topbar from './components/Topbar';
 import StudioView from './views/StudioView';
 import TrainingView from './views/TrainingView';
-import ModelsView from './views/ModelsView';
 import InferenceView from './views/InferenceView';
 import {
   getDatasets,
@@ -93,15 +92,6 @@ export default function App() {
           {activeTab === 'inference' && (
             <InferenceView
               preselectedModel={preselectedModel}
-            />
-          )}
-
-          {activeTab === 'models' && (
-            <ModelsView
-              onSelectForInference={(model) => {
-                setPreselectedModel(model);
-                setActiveTab('inference');
-              }}
             />
           )}
         </div>

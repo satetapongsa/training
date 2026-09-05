@@ -13,7 +13,6 @@ export default function Sidebar({ activeTab, setActiveTab, activeProject }) {
     { id: 'studio', label: 'หน้าหลัก (โหลดรูป & ตีกรอบ GT)', icon: FolderUp },
     { id: 'training', label: 'เทรนโมเดล (Training)', icon: Play },
     { id: 'inference', label: 'ทดสอบภาพ (Testing)', icon: Crosshair },
-    { id: 'models', label: 'ดาวน์โหลดโมเดล (Models)', icon: Boxes },
   ];
 
   return (

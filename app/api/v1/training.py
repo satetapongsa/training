@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -60,11 +61,43 @@ async def list_training_runs(
     return await list_training_jobs(project_id=project_id, db=db)
 
 
+@router.get("/active")
+async def get_active_training_job(db: AsyncSession = Depends(get_database_session)):
+    """Returns details of the currently running training job if any."""
+    active_id = training_worker.get_active_job_id()
+    if not active_id:
+        return {"is_active": False, "job": None}
+
+    stmt = (
+        select(TrainingJob)
+        .options(selectinload(TrainingJob.metrics))
+        .filter(TrainingJob.id == active_id)
+    )
+    result = await db.execute(stmt)
+    job = result.scalar_one_or_none()
+    if not job:
+        return {"is_active": False, "job": None}
+
+    resp = TrainingJobResponse.model_validate(job)
+    resp.recent_metrics = [
+        TrainingMetricResponse.model_validate(m) for m in job.metrics[-20:]
+    ]
+    return {"is_active": True, "job": resp}
+
+
 @router.post("/start", response_model=TrainingJobResponse, status_code=status.HTTP_201_CREATED)
 async def start_training(
     payload: TrainingJobStartRequest,
     db: AsyncSession = Depends(get_database_session),
 ):
+    # Enforce single active training job limit across the entire system
+    if training_worker.has_active_jobs():
+        active_id = training_worker.get_active_job_id()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"มีงานเทรนโมเดลกำลังทำงานอยู่ (Job ID: {active_id}) ระบบอนุญาตให้เทรนได้ครั้งละ 1 งานเท่านั้น เพื่อให้ระบบคำนวณเต็มประสิทธิภาพและรวดเร็ว กรุณารอให้งานปัจจุบันเสร็จสิ้นหรือกดยกเลิกก่อนเริ่มงานใหม่",
+        )
+
     # Verify or auto-create project
     project = None
     if payload.project_id:
@@ -199,3 +232,41 @@ async def get_training_logs(job_id: int, db: AsyncSession = Depends(get_database
         content = f.read()
 
     return {"logs": content}
+
+
+@router.get("/{job_id}/weights/download")
+async def download_job_weights(job_id: int, db: AsyncSession = Depends(get_database_session)):
+    """Directly downloads best.pt model weights file for the completed training job."""
+    stmt = select(TrainingJob).filter(TrainingJob.id == job_id)
+    result = await db.execute(stmt)
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Training job not found.")
+
+    run_dir = Path(job.run_dir)
+    candidates = []
+    if job.checkpoint_path:
+        candidates.append(Path(job.checkpoint_path))
+    candidates.extend([
+        run_dir / "checkpoints" / "best.pt",
+        run_dir / "weights" / "best.pt",
+        run_dir / "checkpoints" / "last.pt",
+        run_dir / "weights" / "last.pt",
+    ])
+
+    target_file = None
+    for cand in candidates:
+        if cand.exists() and cand.is_file():
+            target_file = cand
+            break
+
+    if not target_file:
+        raise HTTPException(status_code=404, detail="Weights file not found for this training job.")
+
+    clean_name = job.model_name.replace(" ", "_")
+    filename = f"{clean_name}_{job.architecture}_best.pt"
+    return FileResponse(
+        str(target_file),
+        media_type="application/octet-stream",
+        filename=filename,
+    )

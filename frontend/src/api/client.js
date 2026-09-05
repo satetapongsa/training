@@ -168,6 +168,14 @@ export async function cancelTraining(runId) {
   });
 }
 
+export async function getActiveTrainingJob() {
+  return request('/api/v1/training/active');
+}
+
+export function getJobWeightDownloadUrl(jobId) {
+  return `${BASE_URL}/api/v1/training/${jobId}/weights/download`;
+}
+
 // --- Inference ---
 export async function runInference(formData) {
   const url = `${BASE_URL}/api/v1/inference/detect`;
