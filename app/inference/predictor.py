@@ -68,8 +68,46 @@ class Predictor:
         self.device = "cuda" if (device != "cpu" and torch.cuda.is_available()) else "cpu"
         self.model_name = self.model_path.stem
         self.suffix = self.model_path.suffix.lower()
+        self.is_kdel = False
+        self.kdel_classes = []
+        self.variant = "standard"
 
         logger.info(f"Loading inference model '{self.model_path.name}' on {self.device}...")
+
+        # 1. Attempt loading as proprietary KDel 4.0 model first
+        if self.suffix == ".pt":
+            try:
+                ckpt = torch.load(self.model_path, map_location=self.device, weights_only=False)
+                if isinstance(ckpt, dict) and ("model_state_dict" in ckpt or ckpt.get("architecture", "").startswith("kdel")):
+                    from app.models.kdel import KDel4Model
+                    self.kdel_classes = ckpt.get("classes", ["object"])
+                    num_classes = max(1, len(self.kdel_classes))
+                    state_dict = ckpt["model_state_dict"] if "model_state_dict" in ckpt else ckpt
+                    initial_variant = str(ckpt.get("variant", ckpt.get("architecture", "standard"))).lower()
+
+                    # Try loading with specified variant or auto-discover
+                    loaded_model = None
+                    for cand_v in [initial_variant, "nano", "standard", "pro"]:
+                        try:
+                            m = KDel4Model(num_classes=num_classes, variant=cand_v)
+                            m.load_state_dict(state_dict)
+                            loaded_model = m
+                            self.variant = cand_v
+                            break
+                        except Exception:
+                            continue
+
+                    if loaded_model is not None:
+                        self.model = loaded_model
+                        self.model.to(self.device)
+                        self.model.eval()
+                        self.is_kdel = True
+                        logger.info(f"Loaded KDel 4.0 ({self.variant}) Deep Learning Model with {num_classes} classes: {self.kdel_classes}")
+                        return
+            except Exception as e:
+                logger.debug(f"Not a KDel state_dict ({e}), falling back to YOLO format...")
+
+        # 2. Fallback to Ultralytics YOLO loader if not KDel
         if self.suffix in [".pt", ".onnx", ".engine"]:
             self.model = YOLO(str(self.model_path))
         else:
@@ -92,7 +130,54 @@ class Predictor:
         w, h = pil_img.size
         t0 = time.perf_counter()
 
-        # Run model forward pass
+        detections: List[Dict[str, Any]] = []
+
+        # --- Native KDel 4.0 Inference ---
+        if self.is_kdel:
+            from app.models.kdel import kdel_nms
+            from torchvision import transforms
+
+            preprocess = transforms.Compose([
+                transforms.Resize((640, 640)),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ])
+            img_t = preprocess(pil_img).unsqueeze(0).to(self.device)
+
+            with torch.no_grad():
+                decoded = self.model(img_t)
+                kdel_dets = kdel_nms(decoded[0], conf_threshold=conf_threshold, iou_threshold=iou_threshold)
+
+            latency_ms = (time.perf_counter() - t0) * 1000.0
+
+            for d in kdel_dets:
+                cid = d["class_id"]
+                cname = self.kdel_classes[cid] if cid < len(self.kdel_classes) else f"class_{cid}"
+                x1 = d["box"]["x1"]
+                y1 = d["box"]["y1"]
+                x2 = d["box"]["x2"]
+                y2 = d["box"]["y2"]
+
+                detections.append({
+                    "class_id": cid,
+                    "class_name": cname,
+                    "confidence": round(d["confidence"], 4),
+                    "x1": x1,
+                    "y1": y1,
+                    "x2": x2,
+                    "y2": y2,
+                    "box": d["box"],
+                    "box_pixels": [int(x1 * w), int(y1 * h), int(x2 * w), int(y2 * h)],
+                })
+
+            return PredictionResult(
+                original_image=pil_img,
+                detections=detections,
+                inference_time_ms=latency_ms,
+                model_name=f"KDel 4.0 ({self.model_name})",
+            )
+
+        # --- Fallback YOLO Inference ---
         results = self.model(
             pil_img,
             conf=conf_threshold,
@@ -103,7 +188,6 @@ class Predictor:
 
         latency_ms = (time.perf_counter() - t0) * 1000.0
 
-        detections: List[Dict[str, Any]] = []
         if results and len(results) > 0:
             res = results[0]
             boxes = res.boxes
@@ -115,7 +199,6 @@ class Predictor:
 
                 for box, conf, cls_id in zip(xyxy, confs, classes):
                     x1_px, y1_px, x2_px, y2_px = box
-                    # Normalize to 0..1
                     norm_x1 = max(0.0, min(1.0, float(x1_px / w)))
                     norm_y1 = max(0.0, min(1.0, float(y1_px / h)))
                     norm_x2 = max(0.0, min(1.0, float(x2_px / w)))
@@ -129,6 +212,7 @@ class Predictor:
                         "y1": norm_y1,
                         "x2": norm_x2,
                         "y2": norm_y2,
+                        "box": {"x1": norm_x1, "y1": norm_y1, "x2": norm_x2, "y2": norm_y2},
                         "box_pixels": [int(x1_px), int(y1_px), int(x2_px), int(y2_px)],
                     })
 

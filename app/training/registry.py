@@ -1,5 +1,6 @@
 from typing import Dict, Type
 from app.training.base import TrainerBase
+from app.training.trainers.kdel_trainer import KDelDetectionTrainer
 from app.training.trainers.detection_yolo import YOLODetectionTrainer
 from app.training.trainers.classification import PyTorchClassificationTrainer
 
@@ -8,12 +9,20 @@ class TrainerRegistry:
     """Registry pattern allowing dynamic addition of model architectures."""
 
     _registry: Dict[str, Type[TrainerBase]] = {
-        # Detection architectures
+        # KDel 4.0 Native PyTorch Detection architectures (Primary Default)
+        "kdel4": KDelDetectionTrainer,
+        "kdel-4.0": KDelDetectionTrainer,
+        "kdel4.0": KDelDetectionTrainer,
+        "kdel4_nano": KDelDetectionTrainer,
+        "kdel4_pro": KDelDetectionTrainer,
+        "detection_default": KDelDetectionTrainer,
+
+        # Standard Detection architectures
         "yolo11n": YOLODetectionTrainer,
         "yolo11s": YOLODetectionTrainer,
         "yolov8n": YOLODetectionTrainer,
         "yolov8s": YOLODetectionTrainer,
-        "detection_default": YOLODetectionTrainer,
+
         # Classification architectures
         "resnet18": PyTorchClassificationTrainer,
         "resnet50": PyTorchClassificationTrainer,
@@ -38,9 +47,14 @@ class TrainerRegistry:
 
     @classmethod
     def list_supported_models(cls) -> Dict[str, list]:
-        detection_models = [k for k, v in cls._registry.items() if v is YOLODetectionTrainer and "default" not in k]
+        detection_models = [k for k, v in cls._registry.items() if v in (KDelDetectionTrainer, YOLODetectionTrainer) and "default" not in k]
         classification_models = [k for k, v in cls._registry.items() if v is PyTorchClassificationTrainer and "default" not in k]
         return {
             "detection": detection_models,
             "classification": classification_models,
         }
+
+
+def get_trainer_class(name: str, task_type: str = "detection") -> Type[TrainerBase]:
+    """Helper function to retrieve trainer class by architecture name."""
+    return TrainerRegistry.get(name, task_type=task_type)

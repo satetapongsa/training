@@ -15,7 +15,7 @@ export default function TrainingView({
   onTrainingCompleted,
 }) {
   const [selectedDatasetId, setSelectedDatasetId] = useState(activeDataset?.id || '');
-  const [modelType, setModelType] = useState('yolo11n.pt');
+  const [modelType, setModelType] = useState('kdel4');
   const [epochs, setEpochs] = useState(5);
   const [batchSize, setBatchSize] = useState(16);
   const [learningRate, setLearningRate] = useState(0.01);
@@ -206,10 +206,11 @@ export default function TrainingView({
             onChange={(e) => setModelType(e.target.value)}
             disabled={isTraining}
           >
-            <option value="yolo11n.pt">YOLO11 Nano (Fastest, CPU/Edge)</option>
-            <option value="yolo11s.pt">YOLO11 Small (Balanced Accuracy)</option>
-            <option value="yolo11m.pt">YOLO11 Medium (High Accuracy)</option>
+            <option value="kdel4">KDel 4.0 (โมเดลสร้างเอง - Custom PyTorch Architecture)</option>
+            <option value="kdel4_nano">KDel 4.0 Nano (เน้นความเร็วสูงสุด Ultra-Fast)</option>
+            <option value="kdel4_pro">KDel 4.0 Pro (เน้นความแม่นยำระดับสูง High-Accuracy)</option>
             <option value="resnet18">ResNet-18 (Classification)</option>
+            <option value="yolo11n">YOLO11 Nano</option>
           </select>
         </div>
 

@@ -52,4 +52,4 @@ class CheckpointManager:
         """Loads checkpoint state dictionary from disk."""
         if not checkpoint_path.exists():
             raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
-        return torch.load(checkpoint_path, map_location="cpu")
+        return torch.load(checkpoint_path, map_location="cpu", weights_only=False)
