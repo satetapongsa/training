@@ -74,6 +74,13 @@ class DatasetSplitter:
             (target_dir / split / "images").mkdir(parents=True, exist_ok=True)
             (target_dir / split / "labels").mkdir(parents=True, exist_ok=True)
 
+        # If no images were explicitly designated as 'val', ensure at least one image or 20% goes to 'val'
+        val_assigned = any(img.get("split") == "val" for img, _ in images_with_annotations)
+        if not val_assigned and len(images_with_annotations) > 1:
+            val_count = max(1, int(len(images_with_annotations) * 0.2))
+            for i in range(len(images_with_annotations) - val_count, len(images_with_annotations)):
+                images_with_annotations[i][0]["split"] = "val"
+
         for img, annots in images_with_annotations:
             split = img.get("split", "train")
             src_img_path = Path(img["file_path"])
@@ -82,30 +89,38 @@ class DatasetSplitter:
             # Copy or link image
             if src_img_path.exists() and not dest_img_path.exists():
                 try:
-                    # Try hardlink first for speed and zero duplicate disk usage
                     os.link(src_img_path, dest_img_path)
                 except Exception:
                     import shutil
                     shutil.copy2(src_img_path, dest_img_path)
 
-            # Write label txt file
+            # Write label txt file (Ground Truth)
             label_stem = Path(img["filename"]).stem
             label_path = target_dir / split / "labels" / f"{label_stem}.txt"
             with open(label_path, "w", encoding="utf-8") as f:
                 for a in annots:
                     line = YOLOAnnotationHelper.format_line(
-                        a["class_id"], a["bbox_x"], a["bbox_y"], a["bbox_w"], a["bbox_h"]
+                        a.get("class_id", 0), a["bbox_x"], a["bbox_y"], a["bbox_w"], a["bbox_h"]
                     )
                     f.write(f"{line}\n")
+
+        # Determine actual valid paths for YAML
+        val_imgs = [p for p in (target_dir / "val" / "images").glob("*") if not p.name.startswith(".")]
+        val_path = "val/images" if val_imgs else "train/images"
+
+        test_imgs = [p for p in (target_dir / "test" / "images").glob("*") if not p.name.startswith(".")]
+        test_path = "test/images" if test_imgs else val_path
+
+        resolved_classes = list(classes) if classes else ["object"]
 
         # Create dataset.yaml
         yaml_content = {
             "path": str(target_dir.resolve()).replace("\\", "/"),
             "train": "train/images",
-            "val": "val/images",
-            "test": "test/images",
-            "names": {i: name for i, name in enumerate(classes)},
-            "nc": len(classes),
+            "val": val_path,
+            "test": test_path,
+            "names": {i: name for i, name in enumerate(resolved_classes)},
+            "nc": len(resolved_classes),
         }
 
         yaml_file = target_dir / "dataset.yaml"
