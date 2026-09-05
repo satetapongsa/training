@@ -178,7 +178,7 @@ export default function TrainingView({
     <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: '20px' }}>
       {/* Hyperparameters Configuration */}
       <div className="card">
-        <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', color: '#fff' }}>
+        <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', color: 'var(--text-primary)' }}>
           Training Configuration
         </h3>
 
@@ -333,25 +333,25 @@ export default function TrainingView({
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
-            <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
+            <div style={{ background: '#f8fafc', padding: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
               <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>TRAIN LOSS</div>
-              <div style={{ fontSize: '18px', fontWeight: 700, color: '#fff' }}>
+              <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)' }}>
                 {metrics.train_loss ? Number(metrics.train_loss).toFixed(4) : '--'}
               </div>
             </div>
-            <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
+            <div style={{ background: '#f8fafc', padding: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
               <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>VAL LOSS</div>
-              <div style={{ fontSize: '18px', fontWeight: 700, color: '#fff' }}>
+              <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)' }}>
                 {metrics.val_loss ? Number(metrics.val_loss).toFixed(4) : '--'}
               </div>
             </div>
-            <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
+            <div style={{ background: '#f8fafc', padding: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
               <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>mAP@50</div>
               <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--accent-secondary)' }}>
                 {metrics.map50 ? `${(Number(metrics.map50) * 100).toFixed(1)}%` : '--'}
               </div>
             </div>
-            <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
+            <div style={{ background: '#f8fafc', padding: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
               <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>mAP@50-95</div>
               <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--accent-primary)' }}>
                 {metrics.map50_95 ? `${(Number(metrics.map50_95) * 100).toFixed(1)}%` : '--'}

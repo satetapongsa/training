@@ -550,7 +550,7 @@ export default function StudioView({
       {uploading && (
         <div className="card" style={{ marginBottom: '14px', padding: '12px 16px', borderColor: 'var(--accent-primary)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '12px' }}>
-            <span style={{ fontWeight: 600, color: '#fff' }}>{uploadStatus}</span>
+            <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{uploadStatus}</span>
             <span style={{ fontWeight: 700, color: 'var(--accent-primary)' }}>{uploadProgress}%</span>
           </div>
           <div className="progress-track">
@@ -573,14 +573,14 @@ export default function StudioView({
           onDrop={handleDrop}
           onClick={() => folderInputRef.current?.click()}
         >
-          <FolderUp size={56} color="var(--accent-primary)" style={{ marginBottom: '18px' }} />
-          <h2 style={{ fontSize: '20px', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>
-            Upload Training Folder from Your Computer
+          <FolderUp size={52} color="var(--accent-primary)" style={{ marginBottom: '16px' }} />
+          <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px' }}>
+            อัพโหลดโฟลเดอร์รูปภาพจากคอมพิวเตอร์ของคุณ
           </h2>
-          <p style={{ fontSize: '14px', color: 'var(--text-secondary)', maxWidth: '480px', lineHeight: 1.6, marginBottom: '20px' }}>
-            Click or drag and drop an entire folder of images from Windows Explorer. The system reads all files locally and prepares them for bounding box annotation.
+          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', maxWidth: '460px', lineHeight: 1.6, marginBottom: '20px' }}>
+            คลิกเพื่อเลือกโฟลเดอร์ หรือลากโฟลเดอร์รูปภาพมาวางที่นี่ ระบบจะอ่านไฟล์ในเครื่องทันที และเปิดให้ตีกรอบวัตถุได้เลย
           </p>
-          <div style={{ display: 'flex', gap: '12px' }}>
+          <div style={{ display: 'flex', gap: '10px' }}>
             <button
               className="btn btn-primary btn-lg"
               onClick={(e) => {
@@ -588,7 +588,7 @@ export default function StudioView({
                 folderInputRef.current?.click();
               }}
             >
-              <FolderUp size={16} /> Choose Folder from PC
+              <FolderUp size={16} /> เลือกโฟลเดอร์จากเครื่อง
             </button>
             <button
               className="btn btn-secondary btn-lg"
@@ -597,25 +597,25 @@ export default function StudioView({
                 filesInputRef.current?.click();
               }}
             >
-              <Upload size={16} /> Choose Image Files
+              <Upload size={16} /> เลือกเฉพาะไฟล์รูปภาพ
             </button>
           </div>
         </div>
       ) : (
         /* 3-Column Studio Workspace */
-        <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr 280px', gap: '16px', flex: 1, minHeight: 0 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '230px 1fr 280px', gap: '16px', flex: 1, minHeight: 0 }}>
           {/* Left: Filmstrip / Thumbnails */}
           <div className="card" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '14px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-              <span style={{ fontSize: '13px', fontWeight: 600, color: '#fff' }}>
-                Images ({images.length})
+              <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                รูปภาพทั้งหมด ({images.length})
               </span>
               <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                {selectedImageIndex + 1} of {images.length}
+                {selectedImageIndex + 1} / {images.length}
               </span>
             </div>
 
-            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '5px' }}>
               {images.map((img, idx) => {
                 const isSelected = selectedImageIndex === idx;
                 const displayName =
@@ -631,15 +631,16 @@ export default function StudioView({
                     style={{
                       padding: '8px 10px',
                       borderRadius: 'var(--radius-sm)',
-                      backgroundColor: isSelected ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255, 255, 255, 0.02)',
+                      backgroundColor: isSelected ? '#eef2ff' : '#ffffff',
                       border: `1px solid ${isSelected ? 'var(--accent-primary)' : 'var(--border-color)'}`,
                       cursor: 'pointer',
                       fontSize: '12px',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
-                      color: isSelected ? '#fff' : 'var(--text-secondary)',
-                      transition: 'background 0.15s ease',
+                      color: isSelected ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                      fontWeight: isSelected ? 600 : 400,
+                      transition: 'all 0.15s ease',
                     }}
                   >
                     <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px' }}>
@@ -687,6 +688,7 @@ export default function StudioView({
               position: 'relative',
               overflow: 'hidden',
               padding: '10px',
+              backgroundColor: '#f1f5f9',
             }}
           >
             {selectedImage ? (
@@ -710,7 +712,7 @@ export default function StudioView({
                     maxHeight: 'calc(100vh - 220px)',
                     cursor: 'crosshair',
                     borderRadius: 'var(--radius-sm)',
-                    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.6)',
+                    boxShadow: '0 4px 14px rgba(0, 0, 0, 0.08)',
                   }}
                 />
               </div>
@@ -720,36 +722,38 @@ export default function StudioView({
             <div
               style={{
                 position: 'absolute',
-                bottom: '16px',
-                background: 'rgba(0, 0, 0, 0.65)',
-                backdropFilter: 'blur(6px)',
-                padding: '4px 12px',
+                bottom: '14px',
+                background: 'rgba(255, 255, 255, 0.95)',
+                boxShadow: 'var(--shadow-md)',
+                border: '1px solid var(--border-color)',
+                padding: '5px 14px',
                 borderRadius: 'var(--radius-full)',
                 fontSize: '11px',
+                fontWeight: 500,
                 color: 'var(--text-secondary)',
                 pointerEvents: 'none',
               }}
             >
-              Click and drag with mouse to draw bounding box (ตีกรอบวัตถุ)
+              คลิกและลากเมาส์บนภาพเพื่อตีกรอบวัตถุ (Draw bounding box)
             </div>
           </div>
 
           {/* Right: Class Manager & Bounding Box List ("สร้างออปเจค") */}
           <div className="card" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '16px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-              <h4 style={{ fontSize: '14px', fontWeight: 600 }}>Objects & Classes</h4>
+              <h4 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>สร้างและเลือกออปเจค</h4>
               <button
                 className="btn btn-sm btn-primary"
                 onClick={handleSaveManual}
                 disabled={saving}
               >
-                <Save size={13} /> {saving ? 'Saving...' : 'Save'}
+                <Save size={13} /> {saving ? 'บันทึก...' : 'บันทึก'}
               </button>
             </div>
 
             {/* Create / Select Object Class */}
             <div className="form-group">
-              <label className="form-label">Active Drawing Class</label>
+              <label className="form-label">คลาสที่กำลังใช้งาน (Active Class)</label>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
                 {classList.map((c) => (
                   <span
@@ -761,7 +765,7 @@ export default function StudioView({
                       fontSize: '11px',
                       fontWeight: 600,
                       cursor: 'pointer',
-                      backgroundColor: currentClass === c ? 'var(--accent-primary)' : 'rgba(255, 255, 255, 0.05)',
+                      backgroundColor: currentClass === c ? 'var(--accent-primary)' : '#f1f5f9',
                       color: currentClass === c ? '#fff' : 'var(--text-secondary)',
                       border: `1px solid ${currentClass === c ? 'var(--accent-primary)' : 'var(--border-color)'}`,
                       transition: 'all 0.15s ease',
@@ -776,11 +780,11 @@ export default function StudioView({
                 <input
                   className="form-control"
                   style={{ flex: 1, padding: '6px 8px', fontSize: '12px' }}
-                  placeholder="New class name (สร้างออปเจค)..."
+                  placeholder="พิมพ์ชื่อวัตถุใหม่ เช่น car, defect..."
                   value={newClassName}
                   onChange={(e) => setNewClassName(e.target.value)}
                 />
-                <button type="submit" className="btn btn-sm btn-secondary" title="Add class">
+                <button type="submit" className="btn btn-sm btn-secondary" title="เพิ่มออปเจค">
                   <Plus size={13} />
                 </button>
               </form>
@@ -790,12 +794,12 @@ export default function StudioView({
 
             {/* Current Drawn Bounding Boxes */}
             <h5 style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
-              Boxes on Image ({annotations.length})
+              กรอบบนภาพนี้ ({annotations.length})
             </h5>
             <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
               {annotations.length === 0 ? (
                 <div style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', marginTop: '20px' }}>
-                  No objects labeled yet.<br />Draw a box on the image!
+                  ยังไม่มีการตีกรอบ<br />คลิกลากเมาส์บนภาพเพื่อตีกรอบ
                 </div>
               ) : (
                 annotations.map((ann, idx) => (
@@ -807,19 +811,19 @@ export default function StudioView({
                       justifyContent: 'space-between',
                       padding: '6px 10px',
                       borderRadius: 'var(--radius-sm)',
-                      backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                      backgroundColor: '#f8fafc',
                       border: '1px solid var(--border-color)',
                       fontSize: '12px',
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <Tag size={12} color="var(--accent-primary)" />
-                      <span style={{ fontWeight: 600, color: '#fff' }}>{ann.label}</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{ann.label}</span>
                     </div>
                     <button
                       onClick={() => handleDeleteAnnotation(idx)}
-                      style={{ background: 'transparent', border: 'none', color: '#f87171', cursor: 'pointer' }}
-                      title="Delete bounding box"
+                      style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer' }}
+                      title="ลบกรอบนี้"
                     >
                       <Trash2 size={13} />
                     </button>
@@ -836,10 +840,11 @@ export default function StudioView({
                   width: '100%',
                   background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
                   fontWeight: 600,
+                  boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)',
                 }}
                 onClick={() => onProceedToTraining && onProceedToTraining(activeDataset)}
               >
-                <Play size={14} /> Proceed to Train
+                <Play size={14} /> ไปสู่หน้าการเทรนโมเดล
               </button>
             </div>
           </div>

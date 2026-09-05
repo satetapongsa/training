@@ -75,18 +75,14 @@ export default function ModelsView({ activeProject, onSelectForInference }) {
                   </div>
                 </div>
                 <span
-                  className="badge"
-                  style={{
-                    background: run.status === 'completed' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                    color: run.status === 'completed' ? '#6ee7b7' : '#fca5a5',
-                  }}
+                  className={`badge ${run.status === 'completed' ? 'badge-success' : 'badge-warning'}`}
                 >
                   {run.status}
                 </span>
               </div>
 
               {/* Metrics */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', margin: '14px 0', background: 'rgba(255, 255, 255, 0.02)', padding: '10px', borderRadius: 'var(--radius-sm)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', margin: '14px 0', background: '#f8fafc', padding: '10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
                 <div>
                   <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>mAP@50</div>
                   <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--accent-secondary)' }}>
@@ -101,7 +97,7 @@ export default function ModelsView({ activeProject, onSelectForInference }) {
                 </div>
                 <div>
                   <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>EPOCHS</div>
-                  <div style={{ fontSize: '14px', fontWeight: 600, color: '#fff' }}>
+                  <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>
                     {run.current_epoch || run.epochs || 0}
                   </div>
                 </div>

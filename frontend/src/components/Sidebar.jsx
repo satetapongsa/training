@@ -10,12 +10,10 @@ import {
 
 export default function Sidebar({ activeTab, setActiveTab, activeProject }) {
   const navItems = [
-    { id: 'studio', label: 'Studio Workspace', icon: FolderUp },
-    { id: 'training', label: 'Model Training', icon: Play },
-    { id: 'inference', label: 'Inference Tester', icon: Crosshair },
-    { id: 'models', label: 'Model Registry', icon: Boxes },
-    { id: 'datasets', label: 'All Datasets', icon: Database },
-    { id: 'system', label: 'System Info', icon: Cpu },
+    { id: 'studio', label: 'หน้าหลัก (อัพโหลด & ตีกรอบ)', icon: FolderUp },
+    { id: 'training', label: 'เทรนโมเดล (Training)', icon: Play },
+    { id: 'inference', label: 'ทดสอบภาพ (Testing)', icon: Crosshair },
+    { id: 'models', label: 'ดาวน์โหลดโมเดล (Models)', icon: Boxes },
   ];
 
   return (
@@ -63,7 +61,7 @@ export default function Sidebar({ activeTab, setActiveTab, activeProject }) {
 
       <div className="sidebar-footer">
         <div style={{ color: 'var(--text-muted)', marginBottom: '4px' }}>Active Project</div>
-        <div style={{ color: '#fff', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <div style={{ color: 'var(--text-primary)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {activeProject?.name || 'None Selected'}
         </div>
       </div>

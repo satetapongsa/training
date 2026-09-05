@@ -2,14 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import Sidebar from './components/Sidebar';
 import Topbar from './components/Topbar';
 import StudioView from './views/StudioView';
-import DashboardView from './views/DashboardView';
-import ProjectsView from './views/ProjectsView';
-import DatasetsView from './views/DatasetsView';
-import AnnotationsView from './views/AnnotationsView';
 import TrainingView from './views/TrainingView';
 import ModelsView from './views/ModelsView';
 import InferenceView from './views/InferenceView';
-import SystemView from './views/SystemView';
 import {
   getProjects,
   getDatasets,
@@ -165,12 +160,7 @@ export default function App() {
       />
 
       <main className="main-wrapper">
-        <Topbar
-          activeTab={activeTab}
-          onNewProject={() => setShowNewProjectModal(true)}
-          onNewDataset={() => setShowNewDatasetModal(true)}
-          wsConnected={wsConnected}
-        />
+        <Topbar activeTab={activeTab} wsConnected={wsConnected} />
 
         <div className="content-body">
           {activeTab === 'studio' && (
@@ -185,46 +175,6 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'dashboard' && (
-            <DashboardView
-              projects={projects}
-              datasets={datasets}
-              models={models}
-              setActiveTab={setActiveTab}
-              activeProject={activeProject}
-            />
-          )}
-
-          {activeTab === 'projects' && (
-            <ProjectsView
-              projects={projects}
-              activeProject={activeProject}
-              setActiveProject={setActiveProject}
-              onRefreshProjects={loadAllData}
-            />
-          )}
-
-          {activeTab === 'datasets' && (
-            <DatasetsView
-              activeProject={activeProject}
-              activeDataset={activeDataset}
-              setActiveDataset={setActiveDataset}
-              onSelectImageForAnnotation={(img) => {
-                setSelectedImage(img);
-                setActiveTab('annotations');
-              }}
-            />
-          )}
-
-          {activeTab === 'annotations' && (
-            <AnnotationsView
-              activeDataset={activeDataset}
-              selectedImage={selectedImage}
-              setSelectedImage={setSelectedImage}
-              images={datasetImages}
-            />
-          )}
-
           {activeTab === 'training' && (
             <TrainingView
               activeProject={activeProject}
@@ -233,6 +183,13 @@ export default function App() {
               onTrainingCompleted={() => {
                 if (activeProject) loadProjectModels(activeProject.id);
               }}
+            />
+          )}
+
+          {activeTab === 'inference' && (
+            <InferenceView
+              activeProject={activeProject}
+              preselectedModel={preselectedModel}
             />
           )}
 
@@ -245,106 +202,8 @@ export default function App() {
               }}
             />
           )}
-
-          {activeTab === 'inference' && (
-            <InferenceView
-              activeProject={activeProject}
-              preselectedModel={preselectedModel}
-            />
-          )}
-
-          {activeTab === 'system' && <SystemView />}
         </div>
       </main>
-
-      {/* Quick Project Modal */}
-      {showNewProjectModal && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <div className="modal-header">
-              <h3 style={{ fontSize: '16px', fontWeight: 600 }}>Create New Project</h3>
-              <button
-                style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', fontSize: '18px' }}
-                onClick={() => setShowNewProjectModal(false)}
-              >
-                ✕
-              </button>
-            </div>
-            <form onSubmit={handleCreateProjectModal}>
-              <div className="modal-body">
-                <div className="form-group">
-                  <label className="form-label">Project Name</label>
-                  <input
-                    className="form-control"
-                    placeholder="e.g. Defect Detection"
-                    value={projectNameInput}
-                    onChange={(e) => setProjectNameInput(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Task Type</label>
-                  <select
-                    className="form-control"
-                    value={projectTypeInput}
-                    onChange={(e) => setProjectTypeInput(e.target.value)}
-                  >
-                    <option value="detection">Object Detection</option>
-                    <option value="classification">Classification</option>
-                  </select>
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-secondary" onClick={() => setShowNewProjectModal(false)}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary">
-                  Create Project
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Quick Dataset Modal */}
-      {showNewDatasetModal && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <div className="modal-header">
-              <h3 style={{ fontSize: '16px', fontWeight: 600 }}>Create New Dataset</h3>
-              <button
-                style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', fontSize: '18px' }}
-                onClick={() => setShowNewDatasetModal(false)}
-              >
-                ✕
-              </button>
-            </div>
-            <form onSubmit={handleCreateDatasetModal}>
-              <div className="modal-body">
-                <div className="form-group">
-                  <label className="form-label">Dataset Name</label>
-                  <input
-                    className="form-control"
-                    placeholder="e.g. Products Dataset"
-                    value={datasetNameInput}
-                    onChange={(e) => setDatasetNameInput(e.target.value)}
-                    required
-                  />
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-secondary" onClick={() => setShowNewDatasetModal(false)}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary">
-                  Create Dataset
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -201,7 +201,7 @@ export default function InferenceView({ activeProject, preselectedModel }) {
 
         {/* Inference Telemetry Result */}
         {inferenceResult && (
-          <div style={{ marginTop: '20px', padding: '14px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
+          <div style={{ marginTop: '20px', padding: '14px', background: '#f8fafc', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
               <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Latency:</span>
               <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--accent-success)' }}>
@@ -210,7 +210,7 @@ export default function InferenceView({ activeProject, preselectedModel }) {
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
               <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Detections:</span>
-              <span style={{ fontSize: '13px', fontWeight: 600, color: '#fff' }}>
+              <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
                 {inferenceResult.detections ? inferenceResult.detections.length : 0} objects
               </span>
             </div>
