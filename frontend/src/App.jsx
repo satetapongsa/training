@@ -75,7 +75,7 @@ export default function App() {
       />
 
       <main className="main-wrapper">
-        <div className="content-body">
+        <div className={`content-body tab-${activeTab}`}>
           {activeTab === 'studio' && (
             <StudioView
               activeDataset={activeDataset}

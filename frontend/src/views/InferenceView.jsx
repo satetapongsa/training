@@ -258,7 +258,7 @@ export default function InferenceView({ activeProject, preselectedModel }) {
   }, [testImagePreview, inferenceResult]);
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: '20px' }}>
+    <div className="inference-layout-grid">
       {/* Controls Column */}
       <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         <h3 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)' }}>
@@ -569,7 +569,7 @@ export default function InferenceView({ activeProject, preselectedModel }) {
         style={{
           display: 'flex',
           flexDirection: 'column',
-          minHeight: '480px',
+          minHeight: '300px',
           overflow: 'hidden',
           backgroundColor: '#f8fafc',
           padding: '16px',
@@ -692,7 +692,10 @@ export default function InferenceView({ activeProject, preselectedModel }) {
                 ref={canvasRef}
                 style={{
                   maxWidth: '100%',
-                  maxHeight: 'calc(100vh - 240px)',
+                  maxHeight: 'min(70vh, 600px)',
+                  width: 'auto',
+                  height: 'auto',
+                  objectFit: 'contain',
                   borderRadius: '4px',
                   boxShadow: '0 8px 32px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.15)',
                   display: 'block',

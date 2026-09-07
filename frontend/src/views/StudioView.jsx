@@ -2232,30 +2232,9 @@ nc: ${classList.length}
           </div>
 
           {/* Main Studio Workspace: 1fr (Canvas) + 320px (Right Panel if open) */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: isRightPanelOpen ? '1fr 320px' : '1fr',
-              gap: '10px',
-              flex: 1,
-              minHeight: 0,
-              overflow: 'hidden',
-            }}
-          >
+          <div className={`studio-workspace-grid ${isRightPanelOpen ? 'has-right-panel' : 'single-col'}`}>
             {/* พื้นที่ตีกรอบ (Interactive Annotation Canvas - ขยายกรอบแสดงภาพกว้างเต็มตา) */}
-            <div
-              className="card"
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                position: 'relative',
-                overflow: 'hidden',
-                padding: '10px 14px',
-                backgroundColor: '#ffffff',
-                flex: 1,
-                minHeight: 0,
-              }}
-            >
+            <div className="card studio-canvas-panel">
             {/* Top Toolbar above Canvas */}
             <div
               style={{
@@ -2441,8 +2420,10 @@ nc: ${classList.length}
               onContextMenu={handleSaveByRightClick}
               style={{
                 flex: 1,
-                minHeight: '440px',
+                minHeight: '260px',
                 height: '100%',
+                width: '100%',
+                maxWidth: '100%',
                 display: 'flex',
                 alignItems: zoomMode === 'fit' ? 'center' : 'flex-start',
                 justifyContent: zoomMode === 'fit' ? 'center' : 'flex-start',
@@ -2586,15 +2567,7 @@ nc: ${classList.length}
 
           {/* Right Panel: จัดประเภทออปเจค & บันทึกไฟล์ GT */}
           {isRightPanelOpen && (
-            <div
-              className="card"
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                overflow: 'hidden',
-                padding: '14px',
-              }}
-            >
+            <div className="card studio-right-panel">
             {/* Header: Ground Truth Action */}
             <div
               style={{

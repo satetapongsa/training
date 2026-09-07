@@ -33,21 +33,32 @@
   box-sizing: border-box;
 }
 
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
 body {
   font-family: var(--font-family);
   background-color: var(--bg-main);
   color: var(--text-primary);
   min-height: 100vh;
-  overflow-x: hidden;
+  min-height: 100dvh;
   -webkit-font-smoothing: antialiased;
 }
 
-/* App Layout */
+/* App Layout - Strictly Contained Within Viewport */
 .app-container {
   display: flex;
   flex-direction: column;
-  width: 100vw;
+  width: 100%;
+  max-width: 100vw;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   background-color: var(--bg-main);
 }
@@ -59,6 +70,9 @@ body {
   flex-direction: column;
   overflow: hidden;
   min-height: 0;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
   background-color: var(--bg-main);
 }
 
@@ -143,6 +157,15 @@ body {
   outline: none;
   transition: all 0.15s ease;
   user-select: none;
+  white-space: nowrap;
+}
+
+.nav-label-full {
+  display: inline;
+}
+
+.nav-label-short {
+  display: none;
 }
 
 .top-nav-item:hover:not(.active) {
@@ -186,25 +209,42 @@ body {
 
 .content-body {
   flex: 1;
-  overflow: hidden;
-  padding: 8px 14px;
+  padding: 8px 12px;
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.content-body.tab-studio {
+  overflow: hidden;
+}
+
+.content-body.tab-training,
+.content-body.tab-inference {
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 /* Horizontal Image Reel & Top Studio Toolbar */
 .studio-top-reel {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   background-color: #ffffff;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
-  padding: 6px 12px;
+  padding: 6px 10px;
   margin-bottom: 8px;
   flex-shrink: 0;
   box-shadow: var(--shadow-sm);
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 
 .image-chips-track {
@@ -559,6 +599,9 @@ body {
   color: #38bdf8;
   height: 200px;
   overflow-y: auto;
+  overflow-x: auto;
+  word-break: break-word;
+  white-space: pre-wrap;
   line-height: 1.6;
 }
 
@@ -577,3 +620,186 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+
+/* =======================================================
+   RESPONSIVE & ANTI-OVERFLOW DESIGN SYSTEM
+   ======================================================= */
+
+/* Universal Containment */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+img, canvas, video {
+  max-width: 100%;
+  height: auto;
+}
+
+.card {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* Studio Workspace Grid */
+.studio-workspace-grid {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.studio-workspace-grid.single-col {
+  grid-template-columns: 1fr;
+}
+
+.studio-canvas-panel {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  padding: 10px 14px;
+  background-color: #ffffff;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.studio-right-panel {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-height: 100%;
+  padding: 14px;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Training Layout Grid */
+.training-layout-grid {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 16px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.training-layout-grid > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Inference Layout Grid */
+.inference-layout-grid {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 16px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.inference-layout-grid > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Media Queries: Tablet & Compact Laptops (<= 1024px) */
+@media (max-width: 1024px) {
+  .training-layout-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .inference-layout-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+}
+
+/* Media Queries: Medium Screens (<= 960px) */
+@media (max-width: 960px) {
+  .nav-label-full {
+    display: none;
+  }
+  .nav-label-short {
+    display: inline;
+  }
+  .topbar-brand-sub {
+    display: none;
+  }
+  .topbar-nav {
+    gap: 4px;
+    padding: 3px;
+  }
+  .top-nav-item {
+    padding: 5px 10px;
+    font-size: 12px;
+  }
+
+  .studio-workspace-grid {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+  }
+  .studio-right-panel {
+    max-height: 480px;
+  }
+  .content-body.tab-studio {
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+}
+
+/* Media Queries: Small Devices & Mobile (<= 680px) */
+@media (max-width: 680px) {
+  .topbar {
+    padding: 0 10px;
+    height: 52px;
+  }
+  .topbar-brand-title {
+    font-size: 13px;
+  }
+  .logo-badge-top {
+    width: 30px;
+    height: 30px;
+  }
+  .top-nav-item {
+    padding: 4px 8px;
+    font-size: 11px;
+    gap: 4px;
+  }
+  .topbar-right {
+    display: none;
+  }
+
+  .content-body {
+    padding: 6px 8px;
+  }
+
+  .grid-stats {
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 8px;
+  }
+}
+
+/* Small Viewport Height Fallbacks (<= 640px height) */
+@media (max-height: 640px) {
+  .topbar {
+    height: 48px;
+  }
+  .content-body.tab-studio {
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  .studio-workspace-grid {
+    overflow-y: auto;
+  }
+}
+

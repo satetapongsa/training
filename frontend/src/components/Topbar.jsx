@@ -3,9 +3,9 @@ import { FolderUp, Play, Crosshair, Sparkles } from 'lucide-react';
 
 export default function Topbar({ activeTab, setActiveTab, wsConnected }) {
   const navItems = [
-    { id: 'studio', label: 'หน้าหลัก (โหลดรูป & ตีกรอบ GT)', icon: FolderUp },
-    { id: 'training', label: 'เทรนโมเดล (Training)', icon: Play },
-    { id: 'inference', label: 'ทดสอบภาพ (Testing)', icon: Crosshair },
+    { id: 'studio', label: 'หน้าหลัก (โหลดรูป & ตีกรอบ GT)', shortLabel: 'หน้าหลัก & GT', icon: FolderUp },
+    { id: 'training', label: 'เทรนโมเดล (Training)', shortLabel: 'เทรนโมเดล', icon: Play },
+    { id: 'inference', label: 'ทดสอบภาพ (Testing)', shortLabel: 'ทดสอบภาพ', icon: Crosshair },
   ];
 
   return (
@@ -46,8 +46,9 @@ export default function Topbar({ activeTab, setActiveTab, wsConnected }) {
               className={`top-nav-item ${isActive ? 'active' : ''}`}
               onClick={() => setActiveTab && setActiveTab(item.id)}
             >
-              <Icon size={16} strokeWidth={isActive ? 2.4 : 2} />
-              <span>{item.label}</span>
+              <Icon size={16} strokeWidth={isActive ? 2.4 : 2} style={{ flexShrink: 0 }} />
+              <span className="nav-label-full">{item.label}</span>
+              <span className="nav-label-short">{item.shortLabel}</span>
             </button>
           );
         })}

@@ -436,7 +436,7 @@ export default function TrainingView({
   const isTargetAchieved = errorRatePercent !== '--' && Number(errorRatePercent) <= 1.0;
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '380px 1fr', gap: '20px' }}>
+    <div className="training-layout-grid">
       {/* Column 1: Configuration & Dataset Selection */}
       <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
