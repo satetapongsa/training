@@ -398,7 +398,10 @@ class KDelLoss(nn.Module):
             if matched_regs:
                 pred_r = torch.stack(matched_regs)
                 targ_r = torch.stack(target_regs)
-                total_reg_loss = total_reg_loss + self.l1_reg(pred_r, targ_r)
+                pred_xy = torch.sigmoid(pred_r[:, 0:2])
+                pred_wh = pred_r[:, 2:4].clamp(-4.0, 4.0)
+                pred_activated = torch.cat([pred_xy, pred_wh], dim=-1)
+                total_reg_loss = total_reg_loss + self.l1_reg(pred_activated, targ_r)
 
             # Classification loss if targets exist
             if matched_cls:

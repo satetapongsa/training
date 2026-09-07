@@ -41,6 +41,8 @@ export default function InferenceView({ activeProject, preselectedModel }) {
   const [testImagePreview, setTestImagePreview] = useState(null);
   const [inferenceResult, setInferenceResult] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [detectionProgress, setDetectionProgress] = useState(0);
+  const [detectionStage, setDetectionStage] = useState('');
 
   const canvasRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -74,6 +76,8 @@ export default function InferenceView({ activeProject, preselectedModel }) {
     const url = URL.createObjectURL(file);
     setTestImagePreview(url);
     setInferenceResult(null);
+    setDetectionProgress(0);
+    setDetectionStage('');
   };
 
   const handleRunInference = async () => {
@@ -83,6 +87,28 @@ export default function InferenceView({ activeProject, preselectedModel }) {
     }
 
     setLoading(true);
+    setDetectionProgress(15);
+    setDetectionStage('โหลดไฟล์ภาพและสเกลขนาดภาพ (Preprocessing & Normalization)...');
+
+    let currentProg = 15;
+    const progressInterval = setInterval(() => {
+      currentProg += Math.floor(Math.random() * 8) + 5;
+      if (currentProg > 92) {
+        currentProg = 92;
+      }
+      setDetectionProgress(currentProg);
+
+      if (currentProg < 35) {
+        setDetectionStage('โหลดไฟล์ภาพและสเกลขนาดภาพ (Preprocessing & Normalization)');
+      } else if (currentProg < 65) {
+        setDetectionStage('รันโมเดลโครงข่ายประสาทเทียม AI (Deep Vision Neural Network Forward Pass)');
+      } else if (currentProg < 85) {
+        setDetectionStage('สกัดฟีเจอร์และจับคู่คลาสวัตถุที่เทรนไว้ (Feature Extraction & Class Matching)');
+      } else {
+        setDetectionStage('คำนวณตำแหน่งตีกรอบและกรอง NMS (Bounding Box & NMS Filtering)');
+      }
+    }, 90);
+
     try {
       const formData = new FormData();
       formData.append('file', testImageFile);
@@ -95,11 +121,19 @@ export default function InferenceView({ activeProject, preselectedModel }) {
       formData.append('iou_threshold', iouThreshold);
 
       const result = await runInference(formData);
+      clearInterval(progressInterval);
+      setDetectionProgress(100);
+      setDetectionStage('ตรวจจับเสร็จสิ้น 100% กำลังแสดงผลกรอบวัตถุบนภาพ');
       setInferenceResult(result);
     } catch (err) {
+      clearInterval(progressInterval);
+      setDetectionProgress(0);
+      setDetectionStage('');
       alert(`การตรวจจับล้มเหลว: ${err.message}`);
     } finally {
-      setLoading(false);
+      setTimeout(() => {
+        setLoading(false);
+      }, 350);
     }
   };
 
@@ -153,28 +187,71 @@ export default function InferenceView({ activeProject, preselectedModel }) {
           const className = det.class_name || 'object';
           const color = getClassColor(className, uniqueClassNames);
 
-          // Box rect
+          // 1. Outer heavy dark halo stroke for 100% contrast on any surface
+          ctx.strokeStyle = '#090d16';
+          ctx.lineWidth = 5;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          ctx.strokeRect(x, y, w, h);
+
+          // 2. Vivid inner stroke
           ctx.strokeStyle = color;
           ctx.lineWidth = 3;
           ctx.strokeRect(x, y, w, h);
 
-          // Semi-transparent background
-          ctx.fillStyle = `${color}25`;
+          // 3. Semi-transparent fill
+          ctx.fillStyle = `${color}28`;
           ctx.fillRect(x, y, w, h);
 
-          // Label chip
+          // 4. White Corner L-brackets for futuristic crisp detection
+          const cornerLen = Math.min(22, Math.min(w, h) / 3);
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2.5;
+          ctx.lineCap = 'square';
+          // Top-Left
+          ctx.beginPath();
+          ctx.moveTo(x, y + cornerLen);
+          ctx.lineTo(x, y);
+          ctx.lineTo(x + cornerLen, y);
+          ctx.stroke();
+          // Top-Right
+          ctx.beginPath();
+          ctx.moveTo(x + w - cornerLen, y);
+          ctx.lineTo(x + w, y);
+          ctx.lineTo(x + w, y + cornerLen);
+          ctx.stroke();
+          // Bottom-Left
+          ctx.beginPath();
+          ctx.moveTo(x, y + h - cornerLen);
+          ctx.lineTo(x, y + h);
+          ctx.lineTo(x + cornerLen, y + h);
+          ctx.stroke();
+          // Bottom-Right
+          ctx.beginPath();
+          ctx.moveTo(x + w - cornerLen, y + h);
+          ctx.lineTo(x + w, y + h);
+          ctx.lineTo(x + w, y + h - cornerLen);
+          ctx.stroke();
+
+          // 5. Object Identification Badge: ชื่อวัตถุ และ % ความแม่นยำ
           const confScore = Math.round((det.confidence || 1.0) * 100);
-          const labelText = `${className} (${confScore}%)`;
+          const labelText = `วัตถุ: ${className} (${confScore}%)`;
           ctx.font = 'bold 13px Inter, sans-serif';
           const textWidth = ctx.measureText(labelText).width;
-          const badgeH = 22;
-          const badgeW = textWidth + 16;
+          const badgeH = 24;
+          const badgeW = textWidth + 18;
+          const badgeY = Math.max(0, y - badgeH);
 
+          // Badge background
           ctx.fillStyle = color;
-          ctx.fillRect(x, Math.max(0, y - badgeH), badgeW, badgeH);
+          ctx.fillRect(x, badgeY, badgeW, badgeH);
+          ctx.strokeStyle = '#090d16';
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(x, badgeY, badgeW, badgeH);
 
+          // Badge text
           ctx.fillStyle = '#ffffff';
-          ctx.fillText(labelText, x + 8, Math.max(15, y - 6));
+          ctx.fillText(labelText, x + 8, badgeY + 16);
         });
       }
     };
@@ -270,8 +347,47 @@ export default function InferenceView({ activeProject, preselectedModel }) {
             onClick={handleRunInference}
             disabled={loading || !testImageFile}
           >
-            <Zap size={16} /> {loading ? 'กำลังตรวจจับ...' : 'เริ่มตรวจจับภาพ (Run Inference)'}
+            <Zap size={16} /> {loading ? `กำลังตรวจจับ (${detectionProgress}%)...` : 'เริ่มตรวจจับภาพ (Run Inference)'}
           </button>
+
+          {/* Working Detection Progress Card */}
+          {loading && (
+            <div
+              style={{
+                padding: '12px 14px',
+                backgroundColor: '#eef2ff',
+                borderRadius: 'var(--radius-sm)',
+                border: '1.5px solid var(--accent-primary)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+                marginTop: '4px',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--accent-primary)' }}>
+                  กำลังตรวจจับภาพ...
+                </span>
+                <span style={{ fontSize: '14px', fontWeight: 800, color: 'var(--accent-primary)' }}>
+                  {detectionProgress}%
+                </span>
+              </div>
+              <div style={{ height: '8px', backgroundColor: '#c7d2fe', borderRadius: '4px', overflow: 'hidden' }}>
+                <div
+                  style={{
+                    width: `${detectionProgress}%`,
+                    height: '100%',
+                    backgroundColor: 'var(--accent-primary)',
+                    borderRadius: '4px',
+                    transition: 'width 0.12s ease',
+                  }}
+                />
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                {detectionStage}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* สรุปผลการวิเคราะห์และนับจำนวนวัตถุในภาพ (Identification & Piece Count Summary) */}
@@ -459,14 +575,52 @@ export default function InferenceView({ activeProject, preselectedModel }) {
           padding: '16px',
         }}
       >
+        {/* Working Progress Banner Above Canvas */}
+        {loading && (
+          <div
+            className="card"
+            style={{
+              padding: '12px 16px',
+              backgroundColor: '#ffffff',
+              borderRadius: 'var(--radius-sm)',
+              border: '1.5px solid var(--accent-primary)',
+              marginBottom: '12px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px',
+              boxShadow: '0 2px 10px rgba(79, 70, 229, 0.15)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                กำลังประมวลผลการตรวจจับ: {detectionStage}
+              </span>
+              <span style={{ fontSize: '15px', fontWeight: 800, color: 'var(--accent-primary)' }}>
+                {detectionProgress}%
+              </span>
+            </div>
+            <div style={{ height: '10px', backgroundColor: '#e2e8f0', borderRadius: '5px', overflow: 'hidden' }}>
+              <div
+                style={{
+                  width: `${detectionProgress}%`,
+                  height: '100%',
+                  background: 'linear-gradient(90deg, #4f46e5 0%, #10b981 100%)',
+                  borderRadius: '5px',
+                  transition: 'width 0.12s ease',
+                }}
+              />
+            </div>
+          </div>
+        )}
+
         {/* Inference Overview Banner Above Canvas */}
-        {inferenceResult && (
+        {inferenceResult && !loading && (
           <div
             style={{
               padding: '10px 14px',
-              backgroundColor: '#ffffff',
+              backgroundColor: totalCount > 0 ? '#ecfdf5' : '#ffffff',
               borderRadius: 'var(--radius-sm)',
-              border: '1px solid var(--border-color)',
+              border: `1.5px solid ${totalCount > 0 ? '#10b981' : 'var(--border-color)'}`,
               marginBottom: '12px',
               display: 'flex',
               alignItems: 'center',
@@ -476,8 +630,11 @@ export default function InferenceView({ activeProject, preselectedModel }) {
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                ผลการตรวจจับ: พบทั้งหมด <strong>{totalCount} ชิ้น</strong>
+              <CheckCircle2 size={16} color={totalCount > 0 ? '#10b981' : 'var(--text-muted)'} />
+              <span style={{ fontSize: '13px', fontWeight: 700, color: totalCount > 0 ? '#065f46' : 'var(--text-primary)' }}>
+                {totalCount > 0
+                  ? `ตรวจพบวัตถุที่รู้จักตามที่เทรนไว้: ${totalCount} ชิ้น พร้อมตีกรอบระบุประเภทบนภาพแล้ว`
+                  : `ไม่พบวัตถุตามเกณฑ์ความมั่นใจ (${Math.round(confThreshold * 100)}%)`}
               </span>
               {breakdownList.map((b) => {
                 const col = getClassColor(b.name, uniqueClassNames);
@@ -487,14 +644,14 @@ export default function InferenceView({ activeProject, preselectedModel }) {
                     style={{
                       padding: '2px 8px',
                       borderRadius: '12px',
-                      backgroundColor: `${col}15`,
+                      backgroundColor: `${col}20`,
                       color: col,
                       fontSize: '11px',
-                      fontWeight: 600,
-                      border: `1px solid ${col}33`,
+                      fontWeight: 700,
+                      border: `1px solid ${col}44`,
                     }}
                   >
-                    {b.name}: <strong>{b.count} ชิ้น</strong>
+                    วัตถุ {b.name}: {b.count} ชิ้น
                   </span>
                 );
               })}
@@ -514,6 +671,11 @@ export default function InferenceView({ activeProject, preselectedModel }) {
             alignItems: 'center',
             justifyContent: 'center',
             overflow: 'auto',
+            background: 'radial-gradient(circle, #334155 1.5px, transparent 1.5px) 0 0 / 22px 22px, #0b1329',
+            borderRadius: '8px',
+            border: '1.5px solid #1e293b',
+            padding: '16px',
+            boxShadow: 'inset 0 2px 10px rgba(0, 0, 0, 0.5)',
           }}
         >
           {testImagePreview ? (
@@ -530,20 +692,21 @@ export default function InferenceView({ activeProject, preselectedModel }) {
                 ref={canvasRef}
                 style={{
                   maxWidth: '100%',
-                  maxHeight: 'calc(100vh - 220px)',
-                  borderRadius: 'var(--radius-sm)',
-                  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
-                  backgroundColor: '#ffffff',
+                  maxHeight: 'calc(100vh - 240px)',
+                  borderRadius: '4px',
+                  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.15)',
+                  display: 'block',
+                  margin: 'auto',
                 }}
               />
             </div>
           ) : (
-            <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '40px 20px' }}>
-              <Crosshair size={44} style={{ margin: '0 auto 12px auto', display: 'block', color: 'var(--text-muted)' }} />
-              <div style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text-primary)', marginBottom: '4px' }}>
+            <div style={{ textAlign: 'center', color: '#94a3b8', padding: '40px 20px' }}>
+              <Crosshair size={44} style={{ margin: '0 auto 12px auto', display: 'block', color: '#64748b' }} />
+              <div style={{ fontSize: '14px', fontWeight: 600, color: '#f8fafc', marginBottom: '4px' }}>
                 ยังไม่ได้เลือกรูปภาพทดสอบ
               </div>
-              <div style={{ fontSize: '12px' }}>
+              <div style={{ fontSize: '12px', color: '#94a3b8' }}>
                 คลิกปุ่ม &ldquo;เลือกรูปภาพจากเครื่อง&rdquo; เพื่อนำภาพมาทดสอบการตรวจจับวัตถุด้วยโมเดล AI
               </div>
             </div>

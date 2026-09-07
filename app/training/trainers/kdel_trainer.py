@@ -34,6 +34,7 @@ class KDelDataset(Dataset):
         self.labels_dir = labels_dir
         self.img_size = img_size
         self.is_train = is_train
+        self._cache: Dict[int, Any] = {}
 
         # Find all valid image files
         valid_exts = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
@@ -51,6 +52,9 @@ class KDelDataset(Dataset):
         return len(self.img_paths)
 
     def __getitem__(self, idx):
+        if idx in self._cache:
+            return self._cache[idx]
+
         img_path = self.img_paths[idx]
         image = Image.open(img_path).convert("RGB")
         tensor_img = self.transform(image)
@@ -95,6 +99,8 @@ class KDelDataset(Dataset):
         else:
             target_tensor = torch.tensor(boxes, dtype=torch.float32)
 
+        # Cache in memory for ultra-fast epoch iterations
+        self._cache[idx] = (tensor_img, target_tensor)
         return tensor_img, target_tensor
 
 
@@ -218,7 +224,10 @@ class KDelDetectionTrainer(TrainerBase):
         final_metrics = {}
 
         total_batches = len(self.train_loader)
-        logger.info(f"[Job {self.job_id}] Beginning KDel 4.0 training for {total_epochs} epochs ({total_batches} batches/epoch)...")
+        logger.info(f"[Job {self.job_id}] Beginning KDel 4.0 training for {total_epochs} epochs ({total_batches} batches/epoch) on {self.device}...")
+
+        use_cuda_amp = self.device.type == "cuda"
+        scaler = torch.amp.GradScaler('cuda') if use_cuda_amp else None
 
         for epoch in range(1, total_epochs + 1):
             if self.is_stopped:
@@ -236,20 +245,28 @@ class KDelDetectionTrainer(TrainerBase):
                 if self.is_stopped:
                     break
 
-                images = images.to(self.device)
-                targets = [t.to(self.device) for t in targets]
+                images = images.to(self.device, non_blocking=True)
+                targets = [t.to(self.device, non_blocking=True) for t in targets]
 
-                self.optimizer.zero_grad()
+                self.optimizer.zero_grad(set_to_none=True)
 
-                # Forward pass
-                raw_outputs = self.model(images)
-                loss_dict = self.criterion(raw_outputs, targets)
-                loss = loss_dict["loss"]
-
-                # Backward pass
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=10.0)
-                self.optimizer.step()
+                if use_cuda_amp:
+                    with torch.amp.autocast(device_type='cuda', dtype=torch.float16):
+                        raw_outputs = self.model(images)
+                        loss_dict = self.criterion(raw_outputs, targets)
+                        loss = loss_dict["loss"]
+                    scaler.scale(loss).backward()
+                    scaler.unscale_(self.optimizer)
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=10.0)
+                    scaler.step(self.optimizer)
+                    scaler.update()
+                else:
+                    raw_outputs = self.model(images)
+                    loss_dict = self.criterion(raw_outputs, targets)
+                    loss = loss_dict["loss"]
+                    loss.backward()
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=10.0)
+                    self.optimizer.step()
 
                 # Accumulate losses
                 epoch_loss += loss.item()

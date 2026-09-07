@@ -123,17 +123,31 @@ async def resolve_model_weight_path(
 @router.post("/predict")
 async def detect_single_image(
     file: UploadFile = File(...),
-    run_id: Optional[int] = Form(None),
-    model_id: Optional[int] = Form(None),
+    run_id: Optional[str] = Form(None),
+    model_id: Optional[str] = Form(None),
     confidence: Optional[float] = Form(None),
     conf_threshold: Optional[float] = Form(None),
     iou_threshold: float = Form(0.45),
     db: AsyncSession = Depends(get_database_session),
 ):
     """Executes single image object detection using KDel 4.0 or specified model."""
+    active_run_id = None
+    if run_id and str(run_id).strip():
+        try:
+            active_run_id = int(str(run_id).strip())
+        except ValueError:
+            pass
+
+    active_model_id = None
+    if model_id and str(model_id).strip():
+        try:
+            active_model_id = int(str(model_id).strip())
+        except ValueError:
+            pass
+
     try:
         weight_path, model_name, active_id = await resolve_model_weight_path(
-            db=db, run_id=run_id, model_id=model_id
+            db=db, run_id=active_run_id, model_id=active_model_id
         )
     except FileNotFoundError as e:
         raise HTTPException(status_code=400, detail=str(e))
