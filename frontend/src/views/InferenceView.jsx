@@ -174,36 +174,56 @@ export default function InferenceView({ activeProject, preselectedModel }) {
       // Draw detection bounding boxes if available
       if (detections.length > 0) {
         detections.forEach((det) => {
-          const x1 = det.box ? det.box.x1 : (det.x1 !== undefined ? det.x1 : 0);
-          const y1 = det.box ? det.box.y1 : (det.y1 !== undefined ? det.y1 : 0);
-          const x2 = det.box ? det.box.x2 : (det.x2 !== undefined ? det.x2 : 1);
-          const y2 = det.box ? det.box.y2 : (det.y2 !== undefined ? det.y2 : 1);
+          let x1 = det.box ? det.box.x1 : (det.x1 !== undefined ? det.x1 : 0);
+          let y1 = det.box ? det.box.y1 : (det.y1 !== undefined ? det.y1 : 0);
+          let x2 = det.box ? det.box.x2 : (det.x2 !== undefined ? det.x2 : 1);
+          let y2 = det.box ? det.box.y2 : (det.y2 !== undefined ? det.y2 : 1);
 
-          const x = x1 * canvas.width;
-          const y = y1 * canvas.height;
-          const w = (x2 - x1) * canvas.width;
-          const h = (y2 - y1) * canvas.height;
+          // Normalize if coordinates are provided in absolute pixels
+          if (x2 > 1.0 || y2 > 1.0) {
+            const imgW = inferenceResult?.image_width || canvas.width;
+            const imgH = inferenceResult?.image_height || canvas.height;
+            x1 = x1 / imgW;
+            y1 = y1 / imgH;
+            x2 = x2 / imgW;
+            y2 = y2 / imgH;
+          }
+
+          // Ensure valid bounds
+          const normX1 = Math.max(0, Math.min(1, Math.min(x1, x2)));
+          const normY1 = Math.max(0, Math.min(1, Math.min(y1, y2)));
+          const normX2 = Math.max(0, Math.min(1, Math.max(x1, x2)));
+          const normY2 = Math.max(0, Math.min(1, Math.max(y1, y2)));
+
+          let x = normX1 * canvas.width;
+          let y = normY1 * canvas.height;
+          let w = Math.max(20, (normX2 - normX1) * canvas.width);
+          let h = Math.max(20, (normY2 - normY1) * canvas.height);
+
+          if (x + w > canvas.width) x = Math.max(0, canvas.width - w);
+          if (y + h > canvas.height) y = Math.max(0, canvas.height - h);
 
           const className = det.class_name || 'object';
-          const color = getClassColor(className, uniqueClassNames);
+          const greenBorderColor = '#10b981'; // Emerald Green
+          const greenBadgeBg = '#059669';
 
-          // 1. Outer heavy dark halo stroke for 100% contrast on any surface
-          ctx.strokeStyle = '#090d16';
-          ctx.lineWidth = 5;
+          // 1. Outer dark halo stroke for contrast against any surface
+          ctx.strokeStyle = '#051b11';
+          ctx.lineWidth = 6;
           ctx.lineCap = 'round';
           ctx.lineJoin = 'round';
           ctx.strokeRect(x, y, w, h);
 
-          // 2. Vivid inner stroke
-          ctx.strokeStyle = color;
-          ctx.lineWidth = 3;
+          // 2. Vivid bright green stroke (ตีกรอบเขียวที่วัตถุ)
+          ctx.strokeStyle = greenBorderColor;
+          ctx.lineWidth = 3.5;
           ctx.strokeRect(x, y, w, h);
 
-          // 3. Semi-transparent fill
-          ctx.fillStyle = `${color}28`;
+          // 3. Semi-transparent green fill
+          ctx.fillStyle = 'rgba(16, 185, 129, 0.20)';
           ctx.fillRect(x, y, w, h);
 
-          // 4. White Corner L-brackets for futuristic crisp detection
+          // 4. White Corner L-brackets
           const cornerLen = Math.min(22, Math.min(w, h) / 3);
           ctx.strokeStyle = '#ffffff';
           ctx.lineWidth = 2.5;
@@ -233,25 +253,27 @@ export default function InferenceView({ activeProject, preselectedModel }) {
           ctx.lineTo(x + w, y + h - cornerLen);
           ctx.stroke();
 
-          // 5. Object Identification Badge: ชื่อวัตถุ และ % ความแม่นยำ
+          // 5. Object Identification Badge: ชื่อออปเจควัตถุบนกรอบเขียว
           const confScore = Math.round((det.confidence || 1.0) * 100);
           const labelText = `วัตถุ: ${className} (${confScore}%)`;
-          ctx.font = 'bold 13px Inter, sans-serif';
+          ctx.font = 'bold 14px Inter, sans-serif';
           const textWidth = ctx.measureText(labelText).width;
-          const badgeH = 24;
-          const badgeW = textWidth + 18;
-          const badgeY = Math.max(0, y - badgeH);
+          const badgeH = 26;
+          const badgeW = textWidth + 20;
+
+          let badgeX = Math.max(0, Math.min(canvas.width - badgeW, x));
+          let badgeY = (y >= badgeH + 4) ? (y - badgeH - 2) : (y + 4);
 
           // Badge background
-          ctx.fillStyle = color;
-          ctx.fillRect(x, badgeY, badgeW, badgeH);
-          ctx.strokeStyle = '#090d16';
+          ctx.fillStyle = greenBadgeBg;
+          ctx.fillRect(badgeX, badgeY, badgeW, badgeH);
+          ctx.strokeStyle = '#047857';
           ctx.lineWidth = 1.5;
-          ctx.strokeRect(x, badgeY, badgeW, badgeH);
+          ctx.strokeRect(badgeX, badgeY, badgeW, badgeH);
 
           // Badge text
           ctx.fillStyle = '#ffffff';
-          ctx.fillText(labelText, x + 8, badgeY + 16);
+          ctx.fillText(labelText, badgeX + 10, badgeY + 18);
         });
       }
     };

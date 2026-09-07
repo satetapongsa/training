@@ -449,49 +449,52 @@ def kdel_nms(predictions: torch.Tensor, conf_threshold: float = 0.25, iou_thresh
     scores = scores[order]
     class_ids = class_ids[order]
 
-    keep = []
-    while len(order) > 0:
-        idx = order[0].item()
-        keep.append(idx)
-        if len(order) == 1:
+    kept_detections = []
+    while len(boxes) > 0 and len(kept_detections) < 100:
+        top_box = boxes[0]
+        top_score = scores[0]
+        top_cls = class_ids[0]
+
+        x1_val = float(top_box[0].item())
+        y1_val = float(top_box[1].item())
+        x2_val = float(top_box[2].item())
+        y2_val = float(top_box[3].item())
+
+        kept_detections.append({
+            "box": {
+                "x1": max(0.0, min(1.0, min(x1_val, x2_val))),
+                "y1": max(0.0, min(1.0, min(y1_val, y2_val))),
+                "x2": max(0.0, min(1.0, max(x1_val, x2_val))),
+                "y2": max(0.0, min(1.0, max(y1_val, y2_val))),
+            },
+            "confidence": float(top_score.item()),
+            "class_id": int(top_cls.item()),
+        })
+
+        if len(boxes) == 1:
             break
 
-        cur_box = boxes[0:1]
+        cur_box = top_box.unsqueeze(0)
         other_boxes = boxes[1:]
 
-        # Calculate IoU
         x1 = torch.maximum(cur_box[:, 0], other_boxes[:, 0])
         y1 = torch.maximum(cur_box[:, 1], other_boxes[:, 1])
         x2 = torch.minimum(cur_box[:, 2], other_boxes[:, 2])
         y2 = torch.minimum(cur_box[:, 3], other_boxes[:, 3])
 
         inter_area = torch.clamp(x2 - x1, min=0.0) * torch.clamp(y2 - y1, min=0.0)
-        box_area = (cur_box[:, 2] - cur_box[:, 0]) * (cur_box[:, 3] - cur_box[:, 1])
-        other_area = (other_boxes[:, 2] - other_boxes[:, 0]) * (other_boxes[:, 3] - other_boxes[:, 1])
+        box_area = torch.clamp(cur_box[:, 2] - cur_box[:, 0], min=0.0) * torch.clamp(cur_box[:, 3] - cur_box[:, 1], min=0.0)
+        other_area = torch.clamp(other_boxes[:, 2] - other_boxes[:, 0], min=0.0) * torch.clamp(other_boxes[:, 3] - other_boxes[:, 1], min=0.0)
 
         iou = inter_area / torch.clamp(box_area + other_area - inter_area, min=1e-6)
 
         # Keep indices with IoU < threshold
         keep_mask = iou <= iou_threshold
-        order = order[1:][keep_mask]
         boxes = other_boxes[keep_mask]
         scores = scores[1:][keep_mask]
         class_ids = class_ids[1:][keep_mask]
 
-    # Convert kept detections to list of dicts
-    result = []
-    for i in range(min(100, len(boxes))):
-        result.append({
-            "box": {
-                "x1": float(boxes[i, 0].item()),
-                "y1": float(boxes[i, 1].item()),
-                "x2": float(boxes[i, 2].item()),
-                "y2": float(boxes[i, 3].item()),
-            },
-            "confidence": float(scores[i].item()),
-            "class_id": int(class_ids[i].item()),
-        })
-    return result
+    return kept_detections
 
 
 # Aliases and Model Builders
