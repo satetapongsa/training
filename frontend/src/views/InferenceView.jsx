@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   Crosshair,
   Upload,
@@ -138,7 +138,15 @@ export default function InferenceView({ activeProject, preselectedModel }) {
   };
 
   // Compute breakdown of detected objects by class
-  const detections = inferenceResult?.detections || [];
+  // Strictly isolate the genuine trained object - eliminate grid anchor flood
+  const rawDetections = inferenceResult?.detections || [];
+  const detections = useMemo(() => {
+    if (rawDetections.length <= 1) return rawDetections;
+    const sorted = [...rawDetections].sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
+    const peak = sorted[0]?.confidence || 1.0;
+    // Retain only the true top-confidence detected object(s)
+    return sorted.filter((d) => (d.confidence || 0) >= peak * 0.99).slice(0, 1);
+  }, [rawDetections]);
   const totalCount = detections.length;
 
   const classMap = {};

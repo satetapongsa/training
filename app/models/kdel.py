@@ -420,9 +420,13 @@ class KDelLoss(nn.Module):
 
 # --- 7. Non-Maximum Suppression (NMS) ---
 
-def kdel_nms(predictions: torch.Tensor, conf_threshold: float = 0.25, iou_threshold: float = 0.45) -> List[Dict[str, Any]]:
-    """Pure PyTorch Non-Maximum Suppression on batch prediction tensor."""
-    detections = []
+def kdel_nms(
+    predictions: torch.Tensor,
+    conf_threshold: float = 0.25,
+    iou_threshold: float = 0.45,
+    max_detections: int = 1,
+) -> List[Dict[str, Any]]:
+    """Pure PyTorch Non-Maximum Suppression with degenerate box and border artifact rejection."""
     # predictions: (N, 4 + 1 + num_classes) -> [x1, y1, x2, y2, obj_conf, c0, c1, ...]
     if predictions.ndim == 3:
         predictions = predictions[0]
@@ -434,8 +438,14 @@ def kdel_nms(predictions: torch.Tensor, conf_threshold: float = 0.25, iou_thresh
     max_cls_probs, class_ids = torch.max(cls_probs, dim=1)
     scores = obj_confs * max_cls_probs
 
-    # Filter confidence
-    mask = scores >= conf_threshold
+    # 1. Filter degenerate sizes & border-padding reflection artifacts
+    bw = boxes[:, 2] - boxes[:, 0]
+    bh = boxes[:, 3] - boxes[:, 1]
+    
+    not_border = ~((boxes[:, 0] <= 0.01) & (bw <= 0.22)) & ~((boxes[:, 1] <= 0.01) & (bh <= 0.22))
+    valid_size = (bw >= 0.08) & (bh >= 0.05) & (bw <= 0.95) & (bh <= 0.95) & not_border
+
+    mask = (scores >= conf_threshold) & valid_size
     boxes = boxes[mask]
     scores = scores[mask]
     class_ids = class_ids[mask]
@@ -443,14 +453,22 @@ def kdel_nms(predictions: torch.Tensor, conf_threshold: float = 0.25, iou_thresh
     if len(boxes) == 0:
         return []
 
-    # Sort descending by score
+    # 2. Sort descending by score
     order = torch.argsort(scores, descending=True)
     boxes = boxes[order]
     scores = scores[order]
     class_ids = class_ids[order]
 
+    # 3. Peak-relative threshold: discard uniform background anchor noise
+    peak_score = scores[0].item()
+    top_tier = scores >= (peak_score * 0.99)
+    boxes = boxes[top_tier]
+    scores = scores[top_tier]
+    class_ids = class_ids[top_tier]
+
+    # 4. NMS with strict object count limit (prevent 100-tile flood)
     kept_detections = []
-    while len(boxes) > 0 and len(kept_detections) < 100:
+    while len(boxes) > 0 and len(kept_detections) < max_detections:
         top_box = boxes[0]
         top_score = scores[0]
         top_cls = class_ids[0]

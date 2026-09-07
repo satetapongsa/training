@@ -9,9 +9,9 @@ class DetectionVisualizer:
 
     # Curated palette for clear differentiation
     PALETTE = [
-        "#6366f1", "#10b981", "#f59e0b", "#ef4444",
-        "#8b5cf6", "#06b6d4", "#ec4899", "#14b8a6",
-        "#f97316", "#84cc16", "#3b82f6", "#a855f7"
+        "#10b981", "#059669", "#14b8a6", "#3b82f6",
+        "#8b5cf6", "#06b6d4", "#ec4899", "#f59e0b",
+        "#f97316", "#84cc16", "#6366f1", "#a855f7"
     ]
 
     @staticmethod

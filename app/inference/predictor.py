@@ -146,7 +146,14 @@ class Predictor:
 
             with torch.no_grad():
                 decoded = self.model(img_t)
-                kdel_dets = kdel_nms(decoded[0], conf_threshold=conf_threshold, iou_threshold=iou_threshold)
+                kdel_dets = kdel_nms(
+                    decoded[0],
+                    conf_threshold=conf_threshold,
+                    iou_threshold=iou_threshold,
+                    max_detections=1,
+                )
+                if len(kdel_dets) > 1:
+                    kdel_dets = sorted(kdel_dets, key=lambda x: x.get("confidence", 0.0), reverse=True)[:1]
 
             latency_ms = (time.perf_counter() - t0) * 1000.0
 

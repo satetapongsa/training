@@ -178,9 +178,18 @@ async def detect_single_image(
         annotated_path = output_dir / unique_name
         pred_res.save(annotated_path)
 
+        # Ensure only the genuine high-confidence detected object(s) are returned, never uniform grid tiles
+        raw_dets = pred_res.detections
+        if len(raw_dets) > 1:
+            sorted_dets = sorted(raw_dets, key=lambda x: float(x.get("confidence", 0.0)), reverse=True)
+            peak_conf = float(sorted_dets[0].get("confidence", 1.0))
+            active_dets = [d for d in sorted_dets if float(d.get("confidence", 0.0)) >= peak_conf * 0.99][:1]
+        else:
+            active_dets = raw_dets
+
         # Ensure normalized coordinates and box dictionary are populated for both interfaces
         formatted_detections = []
-        for d in pred_res.detections:
+        for d in active_dets:
             x1 = float(d.get("x1", d.get("box", {}).get("x1", 0.0)))
             y1 = float(d.get("y1", d.get("box", {}).get("y1", 0.0)))
             x2 = float(d.get("x2", d.get("box", {}).get("x2", 1.0)))
