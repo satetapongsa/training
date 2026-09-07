@@ -45,106 +45,11 @@ body {
 /* App Layout */
 .app-container {
   display: flex;
+  flex-direction: column;
+  width: 100vw;
   height: 100vh;
   overflow: hidden;
   background-color: var(--bg-main);
-}
-
-/* Sidebar */
-.sidebar {
-  width: 72px;
-  background-color: var(--bg-sidebar);
-  border-right: 1px solid var(--border-color);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 16px 0;
-  flex-shrink: 0;
-  z-index: 20;
-  transition: width 0.2s ease;
-}
-
-@media (min-width: 1024px) {
-  .sidebar {
-    width: 220px;
-    align-items: stretch;
-  }
-}
-
-.sidebar-logo-area {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 14px 18px 14px;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.logo-badge {
-  width: 42px;
-  height: 42px;
-  border-radius: var(--radius-md);
-  background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25);
-  cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.logo-badge:hover {
-  transform: scale(1.05);
-  box-shadow: 0 6px 16px rgba(79, 70, 229, 0.35);
-}
-
-.sidebar-nav {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 16px 8px;
-  flex: 1;
-  overflow-y: auto;
-}
-
-.nav-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 12px;
-  border-radius: var(--radius-md);
-  color: var(--text-secondary);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  user-select: none;
-}
-
-.nav-item:hover {
-  background-color: #f1f5f9;
-  color: var(--text-primary);
-}
-
-.nav-item.active {
-  background-color: #eef2ff;
-  color: var(--accent-primary);
-  font-weight: 600;
-}
-
-.nav-label {
-  display: none;
-}
-
-@media (min-width: 1024px) {
-  .nav-label {
-    display: inline;
-  }
-}
-
-.sidebar-footer {
-  padding: 12px 14px;
-  border-top: 1px solid var(--border-color);
-  font-size: 11px;
 }
 
 /* Main Area */
@@ -153,40 +58,208 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-height: 0;
   background-color: var(--bg-main);
 }
 
+/* Topbar Header with Brand & Navigation */
 .topbar {
-  height: 58px;
-  padding: 0 24px;
+  height: 60px;
+  padding: 0 20px;
   border-bottom: 1px solid var(--border-color);
   background-color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-shrink: 0;
-  z-index: 10;
+  z-index: 30;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
-.topbar-title {
-  font-size: 16px;
-  font-weight: 600;
+.topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+  user-select: none;
+}
+
+.logo-badge-top {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 3px 10px rgba(79, 70, 229, 0.3);
+  transition: transform 0.2s ease;
+}
+
+.topbar-brand:hover .logo-badge-top {
+  transform: scale(1.06);
+}
+
+.topbar-title-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar-brand-title {
+  font-size: 15px;
+  font-weight: 700;
   color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.topbar-brand-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* Top Horizontal Navigation */
+.topbar-nav {
   display: flex;
   align-items: center;
   gap: 8px;
+  background-color: #f1f5f9;
+  padding: 4px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
 }
 
-.topbar-actions {
+.top-nav-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.top-nav-item:hover:not(.active) {
+  background-color: #e2e8f0;
+  color: var(--text-primary);
+}
+
+.top-nav-item.active {
+  background-color: var(--accent-primary);
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow: 0 2px 6px rgba(79, 70, 229, 0.35);
+}
+
+.topbar-right {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+}
+
+.system-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background-color: #f8fafc;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-color);
+}
+
+.status-dot-active {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: #10b981;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
 }
 
 .content-body {
   flex: 1;
-  overflow-y: auto;
-  padding: 20px 24px;
+  overflow: hidden;
+  padding: 8px 14px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Horizontal Image Reel & Top Studio Toolbar */
+.studio-top-reel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background-color: #ffffff;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 6px 12px;
+  margin-bottom: 8px;
+  flex-shrink: 0;
+  box-shadow: var(--shadow-sm);
+}
+
+.image-chips-track {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  flex: 1;
+  padding: 2px 0;
+  scrollbar-width: thin;
+}
+
+.image-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  background-color: #f8fafc;
+  border: 1px solid var(--border-color);
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.image-chip:hover {
+  background-color: #f1f5f9;
+  border-color: #cbd5e1;
+  color: var(--text-primary);
+}
+
+.image-chip.active {
+  background-color: var(--accent-primary);
+  color: #ffffff;
+  border-color: var(--accent-primary);
+  font-weight: 600;
+  box-shadow: 0 2px 6px rgba(79, 70, 229, 0.35);
+}
+
+.image-chip-gt-badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-weight: 600;
+  background-color: #10b981;
+  color: #ffffff;
+}
+
+.image-chip.active .image-chip-gt-badge {
+  background-color: #ffffff;
+  color: #059669;
 }
 
 /* UI Elements */

@@ -27,6 +27,7 @@ import {
   ZoomIn,
   ZoomOut,
   Maximize2,
+  Minimize2,
   RotateCcw,
   MousePointerClick,
   AlertTriangle,
@@ -178,6 +179,7 @@ export default function StudioView({
   const [zoomMode, setZoomMode] = useState('fit'); // 'fit' (พอดีจอ), 'custom'
   const [zoomScale, setZoomScale] = useState(1); // 0.25 to 4.0
   const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
+  const [isRightPanelOpen, setIsRightPanelOpen] = useState(true);
 
   // DOM Refs
   const folderInputRef = useRef(null);
@@ -821,8 +823,8 @@ export default function StudioView({
         height: 'auto',
         objectFit: 'contain',
         cursor: 'crosshair',
-        borderRadius: 'var(--radius-sm)',
-        boxShadow: '0 4px 16px rgba(0, 0, 0, 0.12)',
+        borderRadius: '4px',
+        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.15)',
         display: 'block',
         margin: 'auto',
         transition: 'width 0.15s ease, height 0.15s ease',
@@ -836,8 +838,8 @@ export default function StudioView({
       maxWidth: 'none',
       maxHeight: 'none',
       cursor: 'crosshair',
-      borderRadius: 'var(--radius-sm)',
-      boxShadow: '0 4px 16px rgba(0, 0, 0, 0.12)',
+      borderRadius: '4px',
+      boxShadow: '0 8px 32px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.15)',
       display: 'block',
       margin: 'auto',
       transition: 'width 0.15s ease, height 0.15s ease',
@@ -1784,7 +1786,7 @@ nc: ${classList.length}
   ).length;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 98px)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', flex: 1, minHeight: 0 }}>
       {/* Hidden file inputs for local folder and files */}
       <input
         type="file"
@@ -1818,10 +1820,11 @@ nc: ${classList.length}
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          marginBottom: '14px',
-          padding: '12px 18px',
+          marginBottom: '8px',
+          padding: '8px 14px',
           flexWrap: 'wrap',
-          gap: '12px',
+          gap: '10px',
+          flexShrink: 0,
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
@@ -2116,54 +2119,73 @@ nc: ${classList.length}
           </div>
         </div>
       ) : (
-        /* 3-Column Studio Workspace */
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: '260px 1fr 310px',
-            gap: '14px',
-            flex: 1,
-            minHeight: 0,
-          }}
-        >
-          {/* Column 1: รายการรูปภาพทั้งหมด (Filmstrip) */}
-          <div className="card" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '14px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                รูปภาพในโฟลเดอร์ ({images.length})
-              </span>
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+          {/* Horizontal Image Reel & Stepper Bar (ย้ายแถบเครื่องมือรูปภาพมาไว้ขอบบนสุด) */}
+          <div className="studio-top-reel">
+            {/* Stepper Navigation */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+              <button
+                className="btn btn-sm btn-secondary"
+                onClick={handlePrevImage}
+                disabled={selectedImageIndex === 0}
+                title="รูปก่อนหน้า (หรือกดลูกศรซ้ายบนคีย์บอร์ด)"
+                style={{ padding: '3px 8px' }}
+              >
+                <ChevronLeft size={14} />
+              </button>
+              <span
+                style={{
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  minWidth: '68px',
+                  textAlign: 'center',
+                  color: 'var(--text-primary)',
+                }}
+              >
                 {selectedImageIndex + 1} / {images.length}
               </span>
+              <button
+                className="btn btn-sm btn-secondary"
+                onClick={handleNextImage}
+                disabled={selectedImageIndex === images.length - 1}
+                title="รูปถัดไป (หรือกดลูกศรขวาบนคีย์บอร์ด)"
+                style={{ padding: '3px 8px' }}
+              >
+                <ChevronRight size={14} />
+              </button>
             </div>
 
-            {/* Filter Tabs */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '4px', marginBottom: '8px' }}>
+            <div style={{ width: '1px', height: '22px', backgroundColor: 'var(--border-color)', margin: '0 2px', flexShrink: 0 }} />
+
+            {/* Quick Filter Buttons */}
+            <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
               <button
-                className={`btn btn-sm ${filterMode === 'all' ? 'btn-primary' : 'btn-secondary'}`}
-                style={{ padding: '3px 6px', fontSize: '11px' }}
+                className={`btn btn-sm ${filterMode === 'all' ? 'btn-primary' : 'btn-ghost'}`}
+                style={{ padding: '3px 8px', fontSize: '11px', fontWeight: 600 }}
                 onClick={() => setFilterMode('all')}
               >
-                ทั้งหมด
+                ทั้งหมด ({images.length})
               </button>
               <button
-                className={`btn btn-sm ${filterMode === 'pending' ? 'btn-primary' : 'btn-secondary'}`}
-                style={{ padding: '3px 6px', fontSize: '11px' }}
+                className={`btn btn-sm ${filterMode === 'pending' ? 'btn-primary' : 'btn-ghost'}`}
+                style={{ padding: '3px 8px', fontSize: '11px', fontWeight: 600 }}
                 onClick={() => setFilterMode('pending')}
               >
-                ยังไม่ตีกรอบ
+                ยังไม่ตีกรอบ ({images.filter((img) => !img.is_annotated && (!img.annotations || img.annotations.length === 0)).length})
               </button>
               <button
-                className={`btn btn-sm ${filterMode === 'annotated' ? 'btn-primary' : 'btn-secondary'}`}
-                style={{ padding: '3px 6px', fontSize: '11px' }}
+                className={`btn btn-sm ${filterMode === 'annotated' ? 'btn-primary' : 'btn-ghost'}`}
+                style={{ padding: '3px 8px', fontSize: '11px', fontWeight: 600 }}
                 onClick={() => setFilterMode('annotated')}
               >
-                GT แล้ว
+                GT แล้ว ({annotatedCount})
               </button>
             </div>
 
-            {/* Image List */}
-            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div style={{ width: '1px', height: '22px', backgroundColor: 'var(--border-color)', margin: '0 2px', flexShrink: 0 }} />
+
+            {/* Scrollable Horizontal Reel of Image Chips */}
+            <div className="image-chips-track">
               {filteredImages.map((img) => {
                 const realIdx = images.indexOf(img);
                 const isSelected = selectedImageIndex === realIdx;
@@ -2177,105 +2199,63 @@ nc: ${classList.length}
                 return (
                   <div
                     key={img.id || realIdx}
+                    className={`image-chip ${isSelected ? 'active' : ''}`}
                     onClick={() => setSelectedImageIndex(realIdx)}
-                    style={{
-                      padding: '6px 8px',
-                      borderRadius: 'var(--radius-sm)',
-                      backgroundColor: isSelected ? '#eef2ff' : '#ffffff',
-                      border: `1px solid ${isSelected ? 'var(--accent-primary)' : 'var(--border-color)'}`,
-                      cursor: 'pointer',
-                      fontSize: '12px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      color: isSelected ? 'var(--accent-primary)' : 'var(--text-secondary)',
-                      fontWeight: isSelected ? 600 : 400,
-                      transition: 'all 0.15s ease',
-                    }}
+                    title={img.gt_name ? `GT: ${img.gt_name} (${displayName})` : displayName}
                   >
-                    <div style={{ display: 'flex', flexDirection: 'column', maxWidth: '145px', overflow: 'hidden' }}>
-                      <span
-                        style={{
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          fontWeight: isSelected ? 700 : 500,
-                          color: isSelected ? 'var(--accent-primary)' : 'var(--text-primary)',
-                        }}
-                        title={img.gt_name || displayName}
-                      >
-                        {img.gt_name ? `GT: ${img.gt_name}` : displayName}
+                    <span style={{ opacity: 0.75, fontSize: '10px' }}>#{realIdx + 1}</span>
+                    <span style={{ maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {img.gt_name ? `GT: ${img.gt_name}` : displayName}
+                    </span>
+                    {hasGt && (
+                      <span className="image-chip-gt-badge">
+                        GT {annCount > 0 ? `(${annCount})` : ''}
                       </span>
-                      {img.gt_name && (
-                        <span
-                          style={{
-                            fontSize: '10px',
-                            color: 'var(--text-muted)',
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                          }}
-                        >
-                          {displayName}
-                        </span>
-                      )}
-                    </div>
-
-                    {hasGt ? (
-                      <span className="badge badge-success" style={{ fontSize: '10px', padding: '2px 6px' }}>
-                        GT ({annCount})
-                      </span>
-                    ) : (
-                      <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>รอตีกรอบ</span>
                     )}
                   </div>
                 );
               })}
             </div>
 
-            {/* Prev / Next buttons */}
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: '8px',
-                marginTop: '10px',
-                paddingTop: '10px',
-                borderTop: '1px solid var(--border-color)',
-              }}
+            <div style={{ width: '1px', height: '22px', backgroundColor: 'var(--border-color)', margin: '0 2px', flexShrink: 0 }} />
+
+            {/* Expand / Collapse Right Panel Toggle Button */}
+            <button
+              className="btn btn-sm btn-secondary"
+              onClick={() => setIsRightPanelOpen(!isRightPanelOpen)}
+              title={isRightPanelOpen ? 'ซ่อนแผงขวาเพื่อขยายกรอบภาพให้กว้างเต็มหน้าจอ' : 'แสดงแผงจัดประเภท'}
+              style={{ flexShrink: 0, padding: '4px 10px', fontSize: '11px', fontWeight: 600 }}
             >
-              <button
-                className="btn btn-sm btn-secondary"
-                onClick={handlePrevImage}
-                disabled={selectedImageIndex === 0}
-              >
-                <ChevronLeft size={14} /> รูปก่อนหน้า
-              </button>
-              <button
-                className="btn btn-sm btn-secondary"
-                onClick={handleNextImage}
-                disabled={selectedImageIndex === images.length - 1}
-              >
-                รูปถัดไป <ChevronRight size={14} />
-              </button>
-            </div>
-            <div style={{ textAlign: 'center', fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>
-              กดปุ่มลูกศร [ &larr; ] [ &rarr; ] บนคีย์บอร์ดเพื่อเปลี่ยนรูป
-            </div>
+              <Maximize2 size={13} />
+              {isRightPanelOpen ? 'ขยายภาพเต็มจอ' : 'แสดงแผงจัดประเภท'}
+            </button>
           </div>
 
-          {/* Column 2: พื้นที่ตีกรอบ (Interactive Annotation Canvas) */}
+          {/* Main Studio Workspace: 1fr (Canvas) + 320px (Right Panel if open) */}
           <div
-            className="card"
             style={{
-              display: 'flex',
-              flexDirection: 'column',
-              position: 'relative',
+              display: 'grid',
+              gridTemplateColumns: isRightPanelOpen ? '1fr 320px' : '1fr',
+              gap: '10px',
+              flex: 1,
+              minHeight: 0,
               overflow: 'hidden',
-              padding: '12px',
-              backgroundColor: '#f8fafc',
             }}
           >
+            {/* พื้นที่ตีกรอบ (Interactive Annotation Canvas - ขยายกรอบแสดงภาพกว้างเต็มตา) */}
+            <div
+              className="card"
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                position: 'relative',
+                overflow: 'hidden',
+                padding: '10px 14px',
+                backgroundColor: '#ffffff',
+                flex: 1,
+                minHeight: 0,
+              }}
+            >
             {/* Top Toolbar above Canvas */}
             <div
               style={{
@@ -2454,23 +2434,25 @@ nc: ${classList.length}
               </div>
             </div>
 
-            {/* Canvas Viewport (หน้าจอสเกลแสดงภาพส่วนที่เลือกเปิด) */}
+            {/* Canvas Viewport (หน้าจอสเกลแสดงภาพส่วนที่เลือกเปิด - กรอบภาพขยายคมชัดเต็มตา) */}
             <div
               ref={viewportRef}
               onWheel={handleCanvasWheel}
               onContextMenu={handleSaveByRightClick}
               style={{
                 flex: 1,
-                minHeight: 0,
+                minHeight: '440px',
+                height: '100%',
                 display: 'flex',
                 alignItems: zoomMode === 'fit' ? 'center' : 'flex-start',
                 justifyContent: zoomMode === 'fit' ? 'center' : 'flex-start',
                 overflow: 'auto',
                 position: 'relative',
-                background: 'radial-gradient(circle, #cbd5e1 1px, transparent 1px) 0 0 / 16px 16px, #f8fafc',
-                borderRadius: 'var(--radius-sm)',
-                border: saveFeedback ? '2px solid #10b981' : '1px solid var(--border-color)',
+                background: 'radial-gradient(circle, #334155 1.5px, transparent 1.5px) 0 0 / 22px 22px, #0b1329',
+                borderRadius: '8px',
+                border: saveFeedback ? '2px solid #10b981' : '2px solid #1e293b',
                 padding: '12px',
+                boxShadow: 'inset 0 2px 10px rgba(0, 0, 0, 0.5)',
                 transition: 'border 0.2s ease',
               }}
             >
@@ -2602,16 +2584,17 @@ nc: ${classList.length}
             </div>
           </div>
 
-          {/* Column 3: จัดประเภทออปเจค & บันทึกไฟล์ GT */}
-          <div
-            className="card"
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              overflow: 'hidden',
-              padding: '16px',
-            }}
-          >
+          {/* Right Panel: จัดประเภทออปเจค & บันทึกไฟล์ GT */}
+          {isRightPanelOpen && (
+            <div
+              className="card"
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
+                padding: '14px',
+              }}
+            >
             {/* Header: Ground Truth Action */}
             <div
               style={{
@@ -2888,7 +2871,9 @@ nc: ${classList.length}
               </button>
             </div>
           </div>
+          )}
         </div>
+      </div>
       )}
     </div>
   );

@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import Sidebar from './components/Sidebar';
 import Topbar from './components/Topbar';
 import StudioView from './views/StudioView';
 import TrainingView from './views/TrainingView';
@@ -69,14 +68,13 @@ export default function App() {
 
   return (
     <div className="app-container">
-      <Sidebar
+      <Topbar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
+        wsConnected={wsConnected}
       />
 
       <main className="main-wrapper">
-        <Topbar activeTab={activeTab} wsConnected={wsConnected} />
-
         <div className="content-body">
           {activeTab === 'studio' && (
             <StudioView
