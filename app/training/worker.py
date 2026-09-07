@@ -230,6 +230,14 @@ class TrainingWorker:
                 event_bus.emit_threadsafe("training_completed", complete_payload)
                 event_bus.emit_threadsafe("training_complete", complete_payload)
 
+                # Auto-sync weights and project to Google Drive if available
+                try:
+                    from scripts.sync_to_drive import sync_project_to_drive
+                    sync_project_to_drive()
+                    job_logger.info("Successfully synced trained weights to Google Drive!")
+                except Exception as sync_err:
+                    job_logger.warning(f"Auto-sync to Google Drive note: {sync_err}")
+
             session.commit()
 
         except Exception as e:
