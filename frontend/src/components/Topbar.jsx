@@ -2,7 +2,7 @@ import React from 'react';
 
 export default function Topbar({ activeTab }) {
   const titles = {
-    studio: 'หน้าหลัก: อัพโหลดโฟลเดอร์ & ตีกรอบวัตถุ',
+    studio: 'หน้าหลัก: อัปโหลดไฟล์ ZIP รูปภาพวัตถุ & ตีกรอบเรียนรู้',
     training: 'การเทรนโมเดล AI (Training)',
     inference: 'ทดสอบการตรวจจับ (Inference Testing)',
   };

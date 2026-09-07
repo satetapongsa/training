@@ -244,6 +244,17 @@ body {
   background-color: #fecaca;
 }
 
+.btn-ghost {
+  background-color: transparent;
+  border-color: transparent;
+  color: var(--text-secondary);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background-color: #f1f5f9;
+  color: var(--text-primary);
+}
+
 .btn-sm {
   padding: 5px 10px;
   font-size: 12px;

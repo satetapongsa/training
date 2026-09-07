@@ -24,6 +24,10 @@ import {
   X,
   Archive,
   FolderDown,
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
+  RotateCcw,
 } from 'lucide-react';
 import {
   createDataset,
@@ -89,12 +93,18 @@ export default function StudioView({
   const [uploadStatus, setUploadStatus] = useState('');
   const [isDragOver, setIsDragOver] = useState(false);
 
+  // Canvas Scaling State (หน้าจอสเกลแสดงภาพส่วนที่เลือกเปิด)
+  const [zoomMode, setZoomMode] = useState('fit'); // 'fit' (พอดีจอ), 'custom'
+  const [zoomScale, setZoomScale] = useState(1); // 0.25 to 4.0
+  const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
+
   // DOM Refs
   const folderInputRef = useRef(null);
   const filesInputRef = useRef(null);
   const zipInputRef = useRef(null);
   const canvasRef = useRef(null);
   const imageObjRef = useRef(null);
+  const viewportRef = useRef(null);
 
   const selectedImage = images[selectedImageIndex] || null;
 
@@ -347,8 +357,7 @@ export default function StudioView({
   };
 
   // --- ZIP ARCHIVE UPLOAD & CLIENT-SIDE UNPACKING ---
-  const handleZipSelect = async (e) => {
-    const file = e.target.files?.[0];
+  const processZipFile = async (file) => {
     if (!file) return;
 
     setUploading(true);
@@ -406,7 +415,7 @@ export default function StudioView({
       }
 
       setUploadProgress(60);
-      setUploadStatus(`พบรูปภาพ ${imageEntries.length} รูป กำลังจัดเตรียมภาพ...`);
+      setUploadStatus(`พบรูปภาพ ${imageEntries.length} รูป กำลังจัดเตรียมภาพและปรับสเกล...`);
 
       const loadedImages = [];
       for (let i = 0; i < imageEntries.length; i++) {
@@ -481,6 +490,8 @@ export default function StudioView({
 
       setImages(loadedImages);
       setSelectedImageIndex(0);
+      setZoomMode('fit');
+      setZoomScale(1);
       setUploadProgress(80);
       setUploadStatus('กำลังอัปโหลดและบันทึกชุดข้อมูลไปยังเซิร์ฟเวอร์...');
 
@@ -517,12 +528,18 @@ export default function StudioView({
       setUploading(false);
       setUploadProgress(0);
       setUploadStatus('');
-    } finally {
-      if (e.target) e.target.value = '';
     }
   };
 
-  // Drag and Drop Recursive Folder Traversal
+  const handleZipSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      processZipFile(file);
+    }
+    if (e.target) e.target.value = '';
+  };
+
+  // Drag and Drop Recursive Folder & ZIP Traversal
   const scanFilesFromEntry = async (entry) => {
     return new Promise((resolve) => {
       if (entry.isFile) {
@@ -550,8 +567,21 @@ export default function StudioView({
     e.preventDefault();
     setIsDragOver(false);
 
+    // 1. Direct check for dropped .zip file
+    const droppedFiles = Array.from(e.dataTransfer.files || []);
+    const droppedZip = droppedFiles.find((f) => f.name.toLowerCase().endsWith('.zip'));
+    if (droppedZip) {
+      processZipFile(droppedZip);
+      return;
+    }
+
     const items = e.dataTransfer.items;
-    if (!items || items.length === 0) return;
+    if (!items || items.length === 0) {
+      if (droppedFiles.length > 0) {
+        handleIngestFiles(droppedFiles);
+      }
+      return;
+    }
 
     const allFiles = [];
     for (let i = 0; i < items.length; i++) {
@@ -565,9 +595,78 @@ export default function StudioView({
       }
     }
 
+    // 2. Check if scanned files contain a .zip
+    const innerZip = allFiles.find((f) => f.name.toLowerCase().endsWith('.zip'));
+    if (innerZip) {
+      processZipFile(innerZip);
+      return;
+    }
+
     if (allFiles.length > 0) {
       handleIngestFiles(allFiles);
     }
+  };
+
+  // --- VIEWPORT SCALING & ZOOM CONTROLS (หน้าจอสเกลแสดงภาพส่วนที่เลือกเปิด) ---
+  const handleZoomIn = () => {
+    setZoomMode('custom');
+    setZoomScale((prev) => Math.min(4.0, +(prev + 0.25).toFixed(2)));
+  };
+
+  const handleZoomOut = () => {
+    setZoomMode('custom');
+    setZoomScale((prev) => Math.max(0.25, +(prev - 0.25).toFixed(2)));
+  };
+
+  const handleZoomFit = () => {
+    setZoomMode('fit');
+    setZoomScale(1);
+  };
+
+  const handleZoom100 = () => {
+    setZoomMode('custom');
+    setZoomScale(1);
+  };
+
+  const handleCanvasWheel = (e) => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      setZoomMode('custom');
+      const delta = e.deltaY < 0 ? 0.15 : -0.15;
+      setZoomScale((prev) => Math.max(0.25, Math.min(4.0, +(prev + delta).toFixed(2))));
+    }
+  };
+
+  const getCanvasStyle = () => {
+    if (zoomMode === 'fit') {
+      return {
+        maxWidth: '100%',
+        maxHeight: '100%',
+        width: 'auto',
+        height: 'auto',
+        objectFit: 'contain',
+        cursor: 'crosshair',
+        borderRadius: 'var(--radius-sm)',
+        boxShadow: '0 4px 16px rgba(0, 0, 0, 0.12)',
+        display: 'block',
+        margin: 'auto',
+        transition: 'width 0.15s ease, height 0.15s ease',
+      };
+    }
+    const baseW = canvasRef.current?.width || imageDimensions.width || 800;
+    const baseH = canvasRef.current?.height || imageDimensions.height || 600;
+    return {
+      width: `${Math.round(baseW * zoomScale)}px`,
+      height: `${Math.round(baseH * zoomScale)}px`,
+      maxWidth: 'none',
+      maxHeight: 'none',
+      cursor: 'crosshair',
+      borderRadius: 'var(--radius-sm)',
+      boxShadow: '0 4px 16px rgba(0, 0, 0, 0.12)',
+      display: 'block',
+      margin: 'auto',
+      transition: 'width 0.15s ease, height 0.15s ease',
+    };
   };
 
   // --- CANVAS BOUNDING BOX RENDERING & INTERACTION (ตีกรอบ) ---
@@ -589,6 +688,7 @@ export default function StudioView({
       imageObjRef.current = img;
       canvas.width = img.naturalWidth || 800;
       canvas.height = img.naturalHeight || 600;
+      setImageDimensions({ width: img.naturalWidth || 800, height: img.naturalHeight || 600 });
       redrawCanvas();
     };
   }, [selectedImage]);
@@ -767,11 +867,12 @@ export default function StudioView({
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return { x: 0, y: 0 };
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
     return {
-      x: (e.clientX - rect.left) * scaleX,
-      y: (e.clientY - rect.top) * scaleY,
+      x: Math.max(0, Math.min(canvas.width, (e.clientX - rect.left) * scaleX)),
+      y: Math.max(0, Math.min(canvas.height, (e.clientY - rect.top) * scaleY)),
     };
   };
 
@@ -1268,28 +1369,44 @@ nc: ${classList.length}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
           <button
             className="btn btn-primary"
-            onClick={() => folderInputRef.current?.click()}
+            onClick={() => zipInputRef.current?.click()}
             disabled={uploading}
+            title="อัปโหลดไฟล์ ZIP รูปภาพวัตถุเพื่อแตกไฟล์และปรับสเกลแสดงผลทันที"
             style={{ fontWeight: 600 }}
           >
-            <FolderUp size={16} /> โหลดโฟลเดอร์รูปจากเครื่อง
+            <Archive size={15} /> อัปโหลดไฟล์ ZIP รูปภาพวัตถุ
           </button>
           <button
             className="btn btn-secondary"
-            onClick={() => zipInputRef.current?.click()}
+            onClick={() => folderInputRef.current?.click()}
             disabled={uploading}
-            title="อัปโหลดไฟล์ ZIP รูปภาพเพื่อแตกไฟล์บนเว็บทันที"
-            style={{ fontWeight: 600 }}
+            style={{ fontWeight: 500 }}
           >
-            <Archive size={15} /> อัปโหลดไฟล์ ZIP รูปภาพ
+            <FolderUp size={15} /> โหลดโฟลเดอร์จากเครื่อง
           </button>
           <button
             className="btn btn-secondary"
             onClick={() => filesInputRef.current?.click()}
             disabled={uploading}
           >
-            <Upload size={15} /> เลือกเฉพาะไฟล์รูปภาพ
+            <Upload size={15} /> เลือกเฉพาะไฟล์ภาพ
           </button>
+
+          {images.length > 0 && (
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => {
+                if (window.confirm('คุณต้องการกลับสู่หน้าแรกเพื่อเริ่มอัปโหลดไฟล์ ZIP ใหม่หรือไม่?')) {
+                  setImages([]);
+                  if (setActiveDataset) setActiveDataset(null);
+                }
+              }}
+              title="กลับสู่หน้าระบบอัปโหลดไฟล์ ZIP เริ่มต้น"
+              style={{ color: 'var(--text-secondary)', fontSize: '12px' }}
+            >
+              <RotateCcw size={13} /> อัปโหลดชุดใหม่
+            </button>
+          )}
 
           {images.length > 0 && (
             <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginLeft: '6px' }}>
@@ -1351,63 +1468,185 @@ nc: ${classList.length}
 
       {/* Main Workspace Body */}
       {images.length === 0 ? (
-        /* Empty State Dropzone */
+        /* Empty State Hero ZIP Upload Landing View */
         <div
-          className={`dropzone-container ${isDragOver ? 'drag-over' : ''}`}
-          style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setIsDragOver(true);
+          style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '24px',
+            overflowY: 'auto',
           }}
-          onDragLeave={() => setIsDragOver(false)}
-          onDrop={handleDrop}
-          onClick={() => folderInputRef.current?.click()}
         >
-          <FolderUp size={56} color="var(--accent-primary)" style={{ marginBottom: '16px' }} />
-          <h2 style={{ fontSize: '19px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px' }}>
-            โหลดโฟลเดอร์รูปภาพจากเครื่องเพื่อเริ่มตีกรอบและสร้างไฟล์ GT
-          </h2>
-          <p
+          <div
+            className={`dropzone-container ${isDragOver ? 'drag-over' : ''}`}
             style={{
-              fontSize: '13px',
-              color: 'var(--text-secondary)',
-              maxWidth: '520px',
-              lineHeight: 1.6,
-              marginBottom: '22px',
+              width: '100%',
+              maxWidth: '720px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '48px 32px',
+              backgroundColor: isDragOver ? '#eef2ff' : '#ffffff',
+              borderColor: isDragOver ? 'var(--accent-primary)' : '#cbd5e1',
+              boxShadow: 'var(--shadow-md)',
+              cursor: 'pointer',
+            }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setIsDragOver(true);
+            }}
+            onDragLeave={() => setIsDragOver(false)}
+            onDrop={handleDrop}
+            onClick={() => zipInputRef.current?.click()}
+          >
+            <div
+              style={{
+                width: '76px',
+                height: '76px',
+                borderRadius: '50%',
+                backgroundColor: '#eef2ff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: '20px',
+                boxShadow: '0 4px 14px rgba(79, 70, 229, 0.15)',
+              }}
+            >
+              <Archive size={38} color="var(--accent-primary)" />
+            </div>
+
+            <h2
+              style={{
+                fontSize: '20px',
+                fontWeight: 700,
+                color: 'var(--text-primary)',
+                marginBottom: '8px',
+                textAlign: 'center',
+              }}
+            >
+              ระบบอัปโหลดไฟล์ ZIP รูปภาพวัตถุเพื่อเริ่มการเรียนรู้
+            </h2>
+
+            <p
+              style={{
+                fontSize: '13px',
+                color: 'var(--text-secondary)',
+                maxWidth: '560px',
+                lineHeight: 1.6,
+                textAlign: 'center',
+                marginBottom: '24px',
+              }}
+            >
+              ลากไฟล์ <strong>.zip</strong> ที่บรรจุรูปภาพวัตถุมาวางที่นี่ หรือคลิกปุ่มเพื่อเลือกไฟล์จากเครื่อง
+              ระบบจะแตกไฟล์รูปภาพอัตโนมัติ พร้อมตรวจหาไฟล์ Ground Truth (.txt)
+              และปรับสเกลหน้าจอแสดงภาพให้พร้อมตีกรอบเรียนรู้ทันที
+            </p>
+
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'center' }}>
+              <button
+                className="btn btn-primary btn-lg"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  zipInputRef.current?.click();
+                }}
+                style={{
+                  fontWeight: 600,
+                  padding: '10px 22px',
+                  fontSize: '14px',
+                  boxShadow: '0 4px 12px rgba(79, 70, 229, 0.25)',
+                }}
+              >
+                <Archive size={17} /> อัปโหลดไฟล์ ZIP รูปภาพวัตถุ (.zip)
+              </button>
+              <button
+                className="btn btn-secondary btn-lg"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  folderInputRef.current?.click();
+                }}
+              >
+                <FolderUp size={16} /> หรือเลือกโฟลเดอร์จากเครื่อง
+              </button>
+              <button
+                className="btn btn-secondary btn-lg"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  filesInputRef.current?.click();
+                }}
+              >
+                <Upload size={16} /> เลือกเฉพาะไฟล์รูปภาพ
+              </button>
+            </div>
+
+            <div
+              style={{
+                marginTop: '22px',
+                fontSize: '12px',
+                color: 'var(--text-muted)',
+                display: 'flex',
+                gap: '16px',
+                flexWrap: 'wrap',
+                justifyContent: 'center',
+              }}
+            >
+              <span>รองรับ: .zip, .jpg, .png, .webp, .bmp</span>
+              <span>|</span>
+              <span>แตกไฟล์และอ่าน Label บนเว็บแบบ Zero-Lag</span>
+              <span>|</span>
+              <span>ปรับสเกลหน้าจออัตโนมัติ</span>
+            </div>
+          </div>
+
+          {/* 3 Feature Highlights Below */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+              gap: '16px',
+              width: '100%',
+              maxWidth: '720px',
+              marginTop: '20px',
             }}
           >
-            คลิกปุ่มเพื่อเลือกโฟลเดอร์ หรือลากโฟลเดอร์รูปภาพจากเครื่องมาวางที่นี่
-            ระบบจะแสดงรูปภาพทีละรูปให้คุณตีกรอบ จัดประเภทออปเจค และบันทึกเป็นไฟล์ GT มัดรวมไปเทรนโมเดลได้ทันที
-          </p>
-          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'center' }}>
-            <button
-              className="btn btn-primary btn-lg"
-              onClick={(e) => {
-                e.stopPropagation();
-                folderInputRef.current?.click();
-              }}
-            >
-              <FolderUp size={17} /> เลือกโฟลเดอร์จากเครื่อง
-            </button>
-            <button
-              className="btn btn-secondary btn-lg"
-              onClick={(e) => {
-                e.stopPropagation();
-                zipInputRef.current?.click();
-              }}
-              style={{ fontWeight: 600 }}
-            >
-              <Archive size={17} /> อัปโหลดไฟล์ ZIP รูปภาพ
-            </button>
-            <button
-              className="btn btn-secondary btn-lg"
-              onClick={(e) => {
-                e.stopPropagation();
-                filesInputRef.current?.click();
-              }}
-            >
-              <Upload size={17} /> เลือกเฉพาะไฟล์รูปภาพ
-            </button>
+            <div className="card" style={{ padding: '14px 16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                <Archive size={16} color="var(--accent-primary)" />
+                <strong style={{ fontSize: '13px', color: 'var(--text-primary)' }}>
+                  รับเข้าจากไฟล์ ZIP
+                </strong>
+              </div>
+              <p style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5, margin: 0 }}>
+                อัปโหลดไฟล์ zip ครั้งเดียว แตกไฟล์รูปภาพวัตถุทั้งหมดเข้าสู่ระบบ พร้อมจับคู่ไฟล์ GT ที่มีอยู่เดิม
+              </p>
+            </div>
+
+            <div className="card" style={{ padding: '14px 16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                <Maximize2 size={16} color="#10b981" />
+                <strong style={{ fontSize: '13px', color: 'var(--text-primary)' }}>
+                  หน้าจอสเกลแสดงภาพอัจฉริยะ
+                </strong>
+              </div>
+              <p style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5, margin: 0 }}>
+                ระบบปรับสเกลภาพให้พอดีจออัตโนมัติ หรือซูม 100% และซูมเข้า-ออกเพื่อตีกรอบวัตถุได้อย่างแม่นยำ
+              </p>
+            </div>
+
+            <div className="card" style={{ padding: '14px 16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                <Pentagon size={16} color="#f59e0b" />
+                <strong style={{ fontSize: '13px', color: 'var(--text-primary)' }}>
+                  ตีกรอบเรียนรู้ได้ทุกมุม
+                </strong>
+              </div>
+              <p style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5, margin: 0 }}>
+                คลิกซ้ายตามมุมรอบวัตถุได้ทุกแนว ทั้งแนวเอียง หรือลากสี่เหลี่ยม แล้วบันทึกมัดรวมไปเทรน AI
+              </p>
+            </div>
           </div>
         </div>
       ) : (
@@ -1568,16 +1807,100 @@ nc: ${classList.length}
                 gap: '8px',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                 <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
                   รูปที่ {selectedImageIndex + 1} / {images.length}:
                 </span>
-                <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                <span
+                  style={{
+                    fontSize: '13px',
+                    color: 'var(--text-secondary)',
+                    maxWidth: '220px',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                  title={selectedImage?.original_name || selectedImage?.filename}
+                >
                   {selectedImage?.original_name || selectedImage?.filename}
                 </span>
+                {imageDimensions.width > 0 && (
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      padding: '2px 7px',
+                      borderRadius: '4px',
+                      backgroundColor: '#f1f5f9',
+                      color: 'var(--text-secondary)',
+                      border: '1px solid var(--border-color)',
+                    }}
+                  >
+                    {imageDimensions.width} &times; {imageDimensions.height} px
+                  </span>
+                )}
               </div>
 
               <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                {/* Scale & Zoom Controls (หน้าจอสเกลแสดงภาพส่วนที่เลือกเปิด) */}
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-color)',
+                    overflow: 'hidden',
+                    backgroundColor: '#ffffff',
+                  }}
+                >
+                  <button
+                    className={`btn btn-sm ${zoomMode === 'fit' ? 'btn-primary' : 'btn-ghost'}`}
+                    style={{ borderRadius: 0, padding: '4px 8px', fontSize: '11px', fontWeight: 600, boxShadow: 'none' }}
+                    onClick={handleZoomFit}
+                    title="ปรับสเกลภาพให้พอดีหน้าจอแสดงผลอัตโนมัติ"
+                  >
+                    <Maximize2 size={12} /> พอดีจอ (Fit)
+                  </button>
+                  <button
+                    className={`btn btn-sm ${zoomMode === 'custom' && zoomScale === 1 ? 'btn-primary' : 'btn-ghost'}`}
+                    style={{ borderRadius: 0, padding: '4px 8px', fontSize: '11px', fontWeight: 600, boxShadow: 'none' }}
+                    onClick={handleZoom100}
+                    title="ขนาดภาพจริง 100% (1:1 Pixel)"
+                  >
+                    100%
+                  </button>
+                  <button
+                    className="btn btn-sm btn-ghost"
+                    style={{ borderRadius: 0, padding: '4px 8px', fontSize: '11px', boxShadow: 'none' }}
+                    onClick={handleZoomOut}
+                    disabled={zoomScale <= 0.25}
+                    title="ซูมออก (-)"
+                  >
+                    <ZoomOut size={12} />
+                  </button>
+                  <span
+                    style={{
+                      padding: '0 6px',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      color: 'var(--text-secondary)',
+                      minWidth: '42px',
+                      textAlign: 'center',
+                      userSelect: 'none',
+                    }}
+                  >
+                    {zoomMode === 'fit' ? 'Auto' : `${Math.round(zoomScale * 100)}%`}
+                  </span>
+                  <button
+                    className="btn btn-sm btn-ghost"
+                    style={{ borderRadius: 0, padding: '4px 8px', fontSize: '11px', boxShadow: 'none' }}
+                    onClick={handleZoomIn}
+                    disabled={zoomScale >= 4.0}
+                    title="ซูมเข้า (+)"
+                  >
+                    <ZoomIn size={12} />
+                  </button>
+                </div>
+
                 {/* Annotation Tool Mode Selector */}
                 <div
                   style={{
@@ -1603,7 +1926,7 @@ nc: ${classList.length}
                     }}
                     title="คลิกซ้ายทีละมุมรอบวัตถุ ได้ทุกมุม ทุกแนว ทั้งเอียง"
                   >
-                    <Pentagon size={13} /> โหมดคลิกแต่ละมุม (ทุกแนว/เอียง)
+                    <Pentagon size={13} /> โหมดหลายมุม (ทุกแนว/เอียง)
                   </button>
                   <button
                     className={`btn btn-sm ${drawMode === 'box' ? 'btn-primary' : 'btn-ghost'}`}
@@ -1632,7 +1955,7 @@ nc: ${classList.length}
                   title="ให้โมเดล AI ช่วยดีเทคและเสนอตำแหน่งกรอบอัตโนมัติ"
                 >
                   <Sparkles size={13} color="var(--accent-primary)" />
-                  {autoDetecting ? 'กำลังดีเทค...' : 'ดีเทคอัตโนมัติ (AI Assist)'}
+                  {autoDetecting ? 'กำลังดีเทค...' : 'ดีเทคอัตโนมัติ'}
                 </button>
                 <button
                   className="btn btn-sm btn-secondary"
@@ -1649,18 +1972,22 @@ nc: ${classList.length}
               </div>
             </div>
 
-            {/* Canvas Viewport */}
+            {/* Canvas Viewport (หน้าจอสเกลแสดงภาพส่วนที่เลือกเปิด) */}
             <div
+              ref={viewportRef}
+              onWheel={handleCanvasWheel}
               style={{
                 flex: 1,
                 minHeight: 0,
                 display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
+                alignItems: zoomMode === 'fit' ? 'center' : 'flex-start',
+                justifyContent: zoomMode === 'fit' ? 'center' : 'flex-start',
                 overflow: 'auto',
                 position: 'relative',
-                background: '#f1f5f9',
+                background: 'radial-gradient(circle, #cbd5e1 1px, transparent 1px) 0 0 / 16px 16px, #f8fafc',
                 borderRadius: 'var(--radius-sm)',
+                border: '1px solid var(--border-color)',
+                padding: '12px',
               }}
             >
               {selectedImage ? (
@@ -1672,13 +1999,7 @@ nc: ${classList.length}
                   onMouseUp={handleMouseUp}
                   onDoubleClick={handleDoubleClick}
                   onMouseLeave={() => setCursorPos(null)}
-                  style={{
-                    maxWidth: '100%',
-                    maxHeight: '100%',
-                    cursor: 'crosshair',
-                    borderRadius: 'var(--radius-sm)',
-                    boxShadow: '0 4px 14px rgba(0, 0, 0, 0.08)',
-                  }}
+                  style={getCanvasStyle()}
                 />
               ) : null}
             </div>
@@ -1731,7 +2052,7 @@ nc: ${classList.length}
               </div>
             )}
 
-            {/* Canvas Bottom Hint */}
+            {/* Canvas Bottom Hint & Scale Status */}
             <div
               style={{
                 display: 'flex',
@@ -1740,18 +2061,27 @@ nc: ${classList.length}
                 marginTop: '8px',
                 fontSize: '11px',
                 color: 'var(--text-muted)',
+                flexWrap: 'wrap',
+                gap: '6px',
               }}
             >
               {drawMode === 'polygon' ? (
                 <span>
-                  โหมดคลิกแต่ละมุม: คลิกซ้ายที่แต่ละมุมรอบวัตถุ (ได้ทุกแนว ทุกมุม เอียงได้) แล้วคลิกจุดเริ่มต้น / ดับเบิ้ลคลิก เพื่อปิดกรอบ
+                  โหมดหลายมุม: คลิกซ้ายตามแต่ละมุมรอบวัตถุ (เอียงได้ทุกแนว) แล้วคลิกจุดเริ่มต้น / ดับเบิ้ลคลิก เพื่อปิดกรอบ
                 </span>
               ) : (
                 <span>คลิกและลากเมาส์บนภาพเพื่อตีกรอบสี่เหลี่ยม (Draw bounding box)</span>
               )}
-              <span>
-                ประเภทปัจจุบัน: <strong style={{ color: getClassColor(currentClass) }}>{currentClass}</strong>
-              </span>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                <span>
+                  สเกลภาพ:{' '}
+                  <strong>{zoomMode === 'fit' ? 'พอดีหน้าจอ (Fit)' : `${Math.round(zoomScale * 100)}%`}</strong>{' '}
+                  (กด Ctrl + ลูกกลิ้งเมาส์ เพื่อซูม)
+                </span>
+                <span>
+                  ประเภทปัจจุบัน: <strong style={{ color: getClassColor(currentClass) }}>{currentClass}</strong>
+                </span>
+              </div>
             </div>
           </div>
 
