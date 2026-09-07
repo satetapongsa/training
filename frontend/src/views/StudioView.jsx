@@ -28,6 +28,9 @@ import {
   ZoomOut,
   Maximize2,
   RotateCcw,
+  MousePointerClick,
+  AlertTriangle,
+  Database,
 } from 'lucide-react';
 import {
   createDataset,
@@ -56,6 +59,78 @@ const CLASS_COLORS = [
   '#6366f1', // blue-indigo
 ];
 
+// Web Memory Storage Key (เก็บบันทึกความทรงจำ GT ไว้ในเว็บ)
+const WEB_MEMORY_KEY = 'ai_vision_studio_gt_memory';
+
+const loadAllWebMemory = () => {
+  try {
+    const raw = localStorage.getItem(WEB_MEMORY_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    return {};
+  }
+};
+
+const saveItemToWebMemory = (key, data) => {
+  try {
+    if (!key) return;
+    const memory = loadAllWebMemory();
+    memory[key] = {
+      gt_name: data.gt_name,
+      annotations: data.annotations || [],
+      saved_at: new Date().toISOString(),
+      classList: data.classList || [],
+    };
+    localStorage.setItem(WEB_MEMORY_KEY, JSON.stringify(memory));
+  } catch (e) {
+    console.warn('Failed to save to web memory:', e);
+  }
+};
+
+const checkGtNameDuplicate = (name, currentIndex, allImages) => {
+  const clean = (name || '').trim().toLowerCase();
+  if (!clean) {
+    return 'กรุณาพิมพ์ชื่อ GT สำหรับรูปภาพนี้ (ห้ามเว้นว่าง)';
+  }
+  for (let i = 0; i < allImages.length; i++) {
+    if (i === currentIndex) continue;
+    const otherImg = allImages[i];
+    const otherName = (otherImg?.gt_name || '').trim().toLowerCase();
+    if (otherName && otherName === clean) {
+      const otherDisp = otherImg.original_name || otherImg.filename || `รูปที่ ${i + 1}`;
+      return `ชื่อ GT "${name.trim()}" ซ้ำกับรูปที่ ${i + 1} (${otherDisp}) กรุณาตั้งชื่อไม่ให้ซ้ำกัน`;
+    }
+  }
+  return null;
+};
+
+const generateUniqueGtName = (img, index, allImages) => {
+  if (img?.gt_name && img.gt_name.trim()) {
+    return img.gt_name.trim();
+  }
+  const rawName = img?.original_name || img?.filename || `image_${index + 1}`;
+  const base = rawName.replace(/\.[^/.]+$/, '').trim() || `image_${index + 1}`;
+
+  const isTaken = (candidate) => {
+    const candLower = candidate.toLowerCase();
+    return allImages.some((other, idx) => {
+      if (idx === index) return false;
+      const otherName = (other.gt_name || '').trim().toLowerCase();
+      return otherName === candLower;
+    });
+  };
+
+  if (!isTaken(base)) {
+    return base;
+  }
+
+  let counter = 1;
+  while (isTaken(`${base}_${counter}`)) {
+    counter++;
+  }
+  return `${base}_${counter}`;
+};
+
 export default function StudioView({
   activeDataset,
   setActiveDataset,
@@ -77,6 +152,12 @@ export default function StudioView({
   const [saveFeedback, setSaveFeedback] = useState(false);
   const [autoDetecting, setAutoDetecting] = useState(false);
   const [bundling, setBundling] = useState(false);
+
+  // Unique Ground Truth Name per Image & Web Memory Toast Feedback
+  const [imageGtName, setImageGtName] = useState('');
+  const [gtNameError, setGtNameError] = useState(null);
+  const [rightClickToast, setRightClickToast] = useState(null);
+  const [webMemoryCount, setWebMemoryCount] = useState(0);
 
   // Canvas drawing state
   const [drawMode, setDrawMode] = useState('polygon'); // 'polygon' (คลิกแต่ละมุมรอบวัตถุ ทุกแนว ทุกมุม เอียงได้) or 'box' (สี่เหลี่ยม)
@@ -108,6 +189,16 @@ export default function StudioView({
 
   const selectedImage = images[selectedImageIndex] || null;
 
+  // Refresh web memory count
+  const refreshWebMemoryCount = () => {
+    const mem = loadAllWebMemory();
+    setWebMemoryCount(Object.keys(mem).length);
+  };
+
+  useEffect(() => {
+    refreshWebMemoryCount();
+  }, [images]);
+
   // Helper to get class color
   const getClassColor = (className) => {
     const idx = classList.indexOf(className);
@@ -128,7 +219,7 @@ export default function StudioView({
     }
   }, [activeDataset]);
 
-  // Load annotations when selected image changes
+  // Load annotations & unique GT name when selected image changes
   useEffect(() => {
     setPolygonPoints([]);
     setCursorPos(null);
@@ -136,9 +227,36 @@ export default function StudioView({
 
     if (!selectedImage) {
       setAnnotations([]);
+      setImageGtName('');
+      setGtNameError(null);
       return;
     }
 
+    const memory = loadAllWebMemory();
+    const memKey = selectedImage.filename || `img_${selectedImageIndex}`;
+    const memData = memory[memKey];
+
+    // 1. Determine & assign unique GT name
+    let assignedGtName = selectedImage.gt_name || '';
+    if (!assignedGtName && memData?.gt_name) {
+      assignedGtName = memData.gt_name;
+    }
+    if (!assignedGtName) {
+      assignedGtName = generateUniqueGtName(selectedImage, selectedImageIndex, images);
+    }
+    setImageGtName(assignedGtName);
+
+    // Sync gt_name into image item if missing
+    if (selectedImage.gt_name !== assignedGtName) {
+      setImages((prev) =>
+        prev.map((img, idx) => (idx === selectedImageIndex ? { ...img, gt_name: assignedGtName } : img))
+      );
+    }
+
+    // Check duplicate
+    setGtNameError(checkGtNameDuplicate(assignedGtName, selectedImageIndex, images));
+
+    // 2. Determine annotations (state -> web memory -> backend API)
     if (selectedImage.annotations && selectedImage.annotations.length > 0) {
       const formatted = selectedImage.annotations.map((ann) => {
         const w = ann.bbox_w !== undefined ? ann.bbox_w : ann.x_max - ann.x_min;
@@ -157,12 +275,26 @@ export default function StudioView({
         };
       });
       setAnnotations(formatted);
-      // Ensure class exists in classList
       formatted.forEach((f) => {
         if (!classList.includes(f.label)) {
           setClassList((prev) => [...prev, f.label]);
         }
       });
+    } else if (memData && memData.annotations && memData.annotations.length > 0) {
+      // Restore from Web Memory!
+      setAnnotations(memData.annotations);
+      setImages((prev) =>
+        prev.map((img, idx) =>
+          idx === selectedImageIndex
+            ? { ...img, annotations: memData.annotations, is_annotated: true, gt_name: assignedGtName }
+            : img
+        )
+      );
+      if (memData.classList) {
+        memData.classList.forEach((c) => {
+          if (!classList.includes(c)) setClassList((prev) => [...prev, c]);
+        });
+      }
     } else if (selectedImage.id) {
       getAnnotations(selectedImage.id)
         .then((data) => {
@@ -293,15 +425,37 @@ export default function StudioView({
         }
       }
 
+      const memory = loadAllWebMemory();
+      const memKey = file.name;
+      const memData = memory[memKey];
+      const finalAnnots = initialAnnots.length > 0 ? initialAnnots : (memData?.annotations || []);
+      const stem = file.name.replace(/\.[^/.]+$/, '').trim() || `image_${idx + 1}`;
+      const assignedGt = memData?.gt_name || stem;
+
       return {
         id: null,
         filename: file.name,
         original_name: file.name,
         localUrl: localUrl,
         fileHandle: file,
-        annotations: initialAnnots,
-        is_annotated: initialAnnots.length > 0,
+        gt_name: assignedGt,
+        annotations: finalAnnots,
+        is_annotated: finalAnnots.length > 0,
       };
+    });
+
+    // Ensure unique GT names across all items
+    const localNameSet = new Set();
+    localItems.forEach((item, idx) => {
+      let candidate = item.gt_name || `image_${idx + 1}`;
+      let base = candidate;
+      let counter = 1;
+      while (localNameSet.has(candidate.toLowerCase())) {
+        candidate = `${base}_${counter}`;
+        counter++;
+      }
+      localNameSet.add(candidate.toLowerCase());
+      item.gt_name = candidate;
     });
 
     setImages(localItems);
@@ -478,15 +632,36 @@ export default function StudioView({
           }
         }
 
+        const memory = loadAllWebMemory();
+        const memKey = rawFilename;
+        const memData = memory[memKey];
+        const finalAnnots = parsedAnnots.length > 0 ? parsedAnnots : (memData?.annotations || []);
+        const assignedGt = memData?.gt_name || stem;
+
         loadedImages.push({
           id: null,
           filename: rawFilename,
           localUrl,
           fileHandle: fileObj,
-          annotations: parsedAnnots,
-          is_annotated: parsedAnnots.length > 0,
+          gt_name: assignedGt,
+          annotations: finalAnnots,
+          is_annotated: finalAnnots.length > 0,
         });
       }
+
+      // Ensure unique GT names across all loaded images from ZIP
+      const zipNameSet = new Set();
+      loadedImages.forEach((item, idx) => {
+        let candidate = item.gt_name || `image_${idx + 1}`;
+        let base = candidate;
+        let counter = 1;
+        while (zipNameSet.has(candidate.toLowerCase())) {
+          candidate = `${base}_${counter}`;
+          counter++;
+        }
+        zipNameSet.add(candidate.toLowerCase());
+        item.gt_name = candidate;
+      });
 
       setImages(loadedImages);
       setSelectedImageIndex(0);
@@ -706,7 +881,7 @@ export default function StudioView({
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-    // 1. Draw existing annotations (both polygon contours and bounding boxes)
+    // 1. Draw existing annotations (High-contrast dual stroke with corner brackets & 3-ring nodes)
     annotations.forEach((ann, idx) => {
       const isSelected = selectedBoxIndex === idx;
       const color = getClassColor(ann.label);
@@ -718,46 +893,81 @@ export default function StudioView({
           y: pt[1] * canvas.height,
         }));
 
+        // Fill polygon area
         ctx.beginPath();
         ctx.moveTo(pts[0].x, pts[0].y);
         for (let i = 1; i < pts.length; i++) {
           ctx.lineTo(pts[i].x, pts[i].y);
         }
         ctx.closePath();
-
-        ctx.fillStyle = isSelected ? `${color}45` : `${color}25`;
+        ctx.fillStyle = isSelected ? `${color}45` : `${color}28`;
         ctx.fill();
 
-        ctx.strokeStyle = color;
-        ctx.lineWidth = isSelected ? 4 : 2.5;
+        // Pass 1: Heavy dark outer contour (Ensures 100% visibility on white & bright backgrounds)
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < pts.length; i++) {
+          ctx.lineTo(pts[i].x, pts[i].y);
+        }
+        ctx.closePath();
+        ctx.strokeStyle = '#090d16';
+        ctx.lineWidth = isSelected ? 6.5 : 4.5;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
         ctx.stroke();
 
-        // Corner vertex dots
+        // Pass 2: Vivid inner colored line
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < pts.length; i++) {
+          ctx.lineTo(pts[i].x, pts[i].y);
+        }
+        ctx.closePath();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = isSelected ? 3.5 : 2.5;
+        ctx.stroke();
+
+        // Pass 3: High-contrast 3-Ring Vertex Target Nodes
         pts.forEach((pt) => {
+          // Ring 1: Outer dark ring
           ctx.beginPath();
-          ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2);
+          ctx.arc(pt.x, pt.y, 6.5, 0, Math.PI * 2);
+          ctx.fillStyle = '#090d16';
+          ctx.fill();
+
+          // Ring 2: Middle bright white halo ring
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, 4.5, 0, Math.PI * 2);
           ctx.fillStyle = '#ffffff';
           ctx.fill();
-          ctx.strokeStyle = color;
-          ctx.lineWidth = 2;
-          ctx.stroke();
+
+          // Ring 3: Center vivid class color dot
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, 2.5, 0, Math.PI * 2);
+          ctx.fillStyle = color;
+          ctx.fill();
         });
 
         // Label Tag Chip
         const labelText = ann.label || 'object';
-        ctx.font = 'bold 13px Inter, sans-serif';
+        ctx.font = 'bold 12px Inter, sans-serif';
         const textWidth = ctx.measureText(labelText).width;
         const badgeH = 22;
         const badgeW = textWidth + 18;
 
         const anchorX = Math.min(...pts.map((p) => p.x));
         const anchorY = Math.min(...pts.map((p) => p.y));
+        const tagY = Math.max(0, anchorY - badgeH);
 
+        // Dark outer badge border
+        ctx.fillStyle = '#090d16';
+        ctx.fillRect(anchorX - 1, tagY - 1, badgeW + 2, badgeH + 2);
+        // Colored badge fill
         ctx.fillStyle = color;
-        ctx.fillRect(anchorX, Math.max(0, anchorY - badgeH), badgeW, badgeH);
+        ctx.fillRect(anchorX, tagY, badgeW, badgeH);
 
         ctx.fillStyle = '#ffffff';
-        ctx.fillText(labelText, anchorX + 8, Math.max(15, anchorY - 6));
+        ctx.fillText(labelText, anchorX + 9, tagY + 15);
       } else {
         // Standard Bounding Box Rect
         const x = ann.x_min * canvas.width;
@@ -765,49 +975,143 @@ export default function StudioView({
         const w = (ann.x_max - ann.x_min) * canvas.width;
         const h = (ann.y_max - ann.y_min) * canvas.height;
 
-        ctx.strokeStyle = color;
-        ctx.lineWidth = isSelected ? 4 : 2.5;
-        ctx.fillStyle = `${color}22`;
+        // Semi-transparent fill
+        ctx.fillStyle = isSelected ? `${color}35` : `${color}20`;
         ctx.fillRect(x, y, w, h);
+
+        // Pass 1: Outer heavy dark stroke (Ensures high visibility on bright/white backgrounds)
+        ctx.strokeStyle = '#090d16';
+        ctx.lineWidth = isSelected ? 6.5 : 4.5;
         ctx.strokeRect(x, y, w, h);
 
+        // Pass 2: Inner vivid colored stroke
+        ctx.strokeStyle = color;
+        ctx.lineWidth = isSelected ? 3.5 : 2.5;
+        ctx.strokeRect(x, y, w, h);
+
+        // Pass 3: Four Corner High-Contrast L-Brackets (Corner Accents for crystal-clear visibility)
+        const arm = Math.max(8, Math.min(24, Math.min(w, h) * 0.3));
+        const drawCornerBracket = (cx, cy, dx, dy) => {
+          // Outer dark bracket
+          ctx.beginPath();
+          ctx.moveTo(cx, cy + dy * arm);
+          ctx.lineTo(cx, cy);
+          ctx.lineTo(cx + dx * arm, cy);
+          ctx.strokeStyle = '#090d16';
+          ctx.lineWidth = 6;
+          ctx.lineCap = 'square';
+          ctx.stroke();
+
+          // Inner white bracket
+          ctx.beginPath();
+          ctx.moveTo(cx, cy + dy * arm);
+          ctx.lineTo(cx, cy);
+          ctx.lineTo(cx + dx * arm, cy);
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 3;
+          ctx.lineCap = 'square';
+          ctx.stroke();
+        };
+
+        drawCornerBracket(x, y, 1, 1); // Top-Left
+        drawCornerBracket(x + w, y, -1, 1); // Top-Right
+        drawCornerBracket(x, y + h, 1, -1); // Bottom-Left
+        drawCornerBracket(x + w, y + h, -1, -1); // Bottom-Right
+
+        // Pass 4: Center Reticle Target Mark
+        if (w > 30 && h > 30) {
+          const midX = x + w / 2;
+          const midY = y + h / 2;
+          ctx.beginPath();
+          ctx.moveTo(midX - 4, midY); ctx.lineTo(midX + 4, midY);
+          ctx.moveTo(midX, midY - 4); ctx.lineTo(midX, midY + 4);
+          ctx.strokeStyle = '#090d16';
+          ctx.lineWidth = 3;
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(midX - 4, midY); ctx.lineTo(midX + 4, midY);
+          ctx.moveTo(midX, midY - 4); ctx.lineTo(midX, midY + 4);
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        }
+
+        // Label Tag Chip
         const labelText = ann.label || 'object';
-        ctx.font = 'bold 13px Inter, sans-serif';
+        ctx.font = 'bold 12px Inter, sans-serif';
         const textWidth = ctx.measureText(labelText).width;
         const badgeH = 22;
-        const badgeW = textWidth + 16;
+        const badgeW = textWidth + 18;
+        const tagY = Math.max(0, y - badgeH);
 
+        // Dark outer badge border
+        ctx.fillStyle = '#090d16';
+        ctx.fillRect(x - 1, tagY - 1, badgeW + 2, badgeH + 2);
+        // Colored badge fill
         ctx.fillStyle = color;
-        ctx.fillRect(x, Math.max(0, y - badgeH), badgeW, badgeH);
+        ctx.fillRect(x, tagY, badgeW, badgeH);
 
         ctx.fillStyle = '#ffffff';
-        ctx.fillText(labelText, x + 8, Math.max(15, y - 6));
+        ctx.fillText(labelText, x + 9, tagY + 15);
       }
     });
 
-    // 2. Draw currently actively dragged box (in 'box' mode)
+    // 2. Draw currently actively dragged box (in 'box' mode) with high-contrast dual dash
     if (drawMode === 'box' && currentBox && currentBox.w > 0 && currentBox.h > 0) {
       const color = getClassColor(currentClass);
+
+      // Outer dark dash
+      ctx.strokeStyle = '#090d16';
+      ctx.lineWidth = 4.5;
+      ctx.setLineDash([8, 4]);
+      ctx.strokeRect(currentBox.x, currentBox.y, currentBox.w, currentBox.h);
+
+      // Inner vivid dash
       ctx.strokeStyle = color;
       ctx.lineWidth = 2.5;
-      ctx.setLineDash([6, 4]);
-      ctx.fillStyle = `${color}25`;
+      ctx.lineDashOffset = 4;
+      ctx.fillStyle = `${color}30`;
       ctx.fillRect(currentBox.x, currentBox.y, currentBox.w, currentBox.h);
       ctx.strokeRect(currentBox.x, currentBox.y, currentBox.w, currentBox.h);
       ctx.setLineDash([]);
+      ctx.lineDashOffset = 0;
 
-      ctx.font = 'bold 12px Inter, sans-serif';
-      ctx.fillStyle = color;
-      ctx.fillRect(currentBox.x, Math.max(0, currentBox.y - 20), ctx.measureText(currentClass).width + 14, 20);
+      // Dimension chip at bottom right
+      const dimText = `${Math.round(currentBox.w)} × ${Math.round(currentBox.h)} px`;
+      ctx.font = 'bold 11px Inter, sans-serif';
+      const dimW = ctx.measureText(dimText).width + 12;
+      ctx.fillStyle = '#090d16';
+      ctx.fillRect(currentBox.x + currentBox.w - dimW, currentBox.y + currentBox.h + 4, dimW, 18);
       ctx.fillStyle = '#ffffff';
-      ctx.fillText(currentClass, currentBox.x + 7, Math.max(14, currentBox.y - 5));
+      ctx.fillText(dimText, currentBox.x + currentBox.w - dimW + 6, currentBox.y + currentBox.h + 17);
+
+      // Label chip at top
+      ctx.font = 'bold 12px Inter, sans-serif';
+      ctx.fillStyle = '#090d16';
+      ctx.fillRect(currentBox.x - 1, Math.max(0, currentBox.y - 23), ctx.measureText(currentClass).width + 18, 22);
+      ctx.fillStyle = color;
+      ctx.fillRect(currentBox.x, Math.max(0, currentBox.y - 22), ctx.measureText(currentClass).width + 16, 20);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(currentClass, currentBox.x + 8, Math.max(14, currentBox.y - 7));
     }
 
     // 3. Draw active multi-corner polygon being created (in 'polygon' mode)
     if (drawMode === 'polygon' && polygonPoints.length > 0) {
       const color = getClassColor(currentClass);
 
-      // Connecting edges between placed vertices
+      // Dual-stroke connecting edges between placed vertices
+      // Outer dark line
+      ctx.beginPath();
+      ctx.moveTo(polygonPoints[0].x, polygonPoints[0].y);
+      for (let i = 1; i < polygonPoints.length; i++) {
+        ctx.lineTo(polygonPoints[i].x, polygonPoints[i].y);
+      }
+      ctx.strokeStyle = '#090d16';
+      ctx.lineWidth = 4.5;
+      ctx.lineCap = 'round';
+      ctx.stroke();
+
+      // Inner vivid line
       ctx.beginPath();
       ctx.moveTo(polygonPoints[0].x, polygonPoints[0].y);
       for (let i = 1; i < polygonPoints.length; i++) {
@@ -819,43 +1123,67 @@ export default function StudioView({
 
       // Dynamic rubberband guide line from last point to cursor
       if (cursorPos) {
+        // Outer dark dash
         ctx.beginPath();
-        ctx.setLineDash([6, 4]);
+        ctx.setLineDash([7, 4]);
         const lastPt = polygonPoints[polygonPoints.length - 1];
         ctx.moveTo(lastPt.x, lastPt.y);
         ctx.lineTo(cursorPos.x, cursorPos.y);
+        ctx.strokeStyle = '#090d16';
+        ctx.lineWidth = 3.5;
+        ctx.stroke();
+
+        // Inner vivid dash
         ctx.strokeStyle = color;
         ctx.lineWidth = 2;
+        ctx.lineDashOffset = 3;
         ctx.stroke();
         ctx.setLineDash([]);
+        ctx.lineDashOffset = 0;
       }
 
-      // Draw numbered circle handles on vertices
+      // Draw 3-Ring numbered handles on vertices
       polygonPoints.forEach((pt, i) => {
+        // Outer dark ring
         ctx.beginPath();
-        ctx.arc(pt.x, pt.y, 6, 0, Math.PI * 2);
+        ctx.arc(pt.x, pt.y, 7, 0, Math.PI * 2);
+        ctx.fillStyle = '#090d16';
+        ctx.fill();
+
+        // Middle white ring
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, 5, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+
+        // Center colored dot
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, 3, 0, Math.PI * 2);
         ctx.fillStyle = color;
         ctx.fill();
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 2;
-        ctx.stroke();
 
-        ctx.font = 'bold 10px Inter, sans-serif';
+        // Vertex number badge
+        ctx.font = 'bold 11px Inter, sans-serif';
+        const numText = String(i + 1);
+        ctx.fillStyle = '#090d16';
+        ctx.fillText(numText, pt.x + 9, pt.y - 3);
         ctx.fillStyle = '#ffffff';
-        ctx.fillText(String(i + 1), pt.x + 8, pt.y - 4);
+        ctx.fillText(numText, pt.x + 8, pt.y - 4);
       });
 
       // Highlight first point if cursor is close to it to close the polygon
       if (polygonPoints.length >= 3 && cursorPos) {
         const dist = Math.hypot(cursorPos.x - polygonPoints[0].x, cursorPos.y - polygonPoints[0].y);
-        if (dist <= 20) {
+        if (dist <= 22) {
           ctx.beginPath();
-          ctx.arc(polygonPoints[0].x, polygonPoints[0].y, 14, 0, Math.PI * 2);
+          ctx.arc(polygonPoints[0].x, polygonPoints[0].y, 16, 0, Math.PI * 2);
           ctx.strokeStyle = '#10b981';
-          ctx.lineWidth = 3;
+          ctx.lineWidth = 4;
           ctx.stroke();
 
-          ctx.font = 'bold 11px Inter, sans-serif';
+          ctx.font = 'bold 12px Inter, sans-serif';
+          ctx.fillStyle = '#090d16';
+          ctx.fillText('คลิกเพื่อปิดกรอบ', polygonPoints[0].x + 13, polygonPoints[0].y + 15);
           ctx.fillStyle = '#10b981';
           ctx.fillText('คลิกเพื่อปิดกรอบ', polygonPoints[0].x + 12, polygonPoints[0].y + 14);
         }
@@ -1054,31 +1382,123 @@ export default function StudioView({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedImageIndex, images.length, drawMode, polygonPoints.length, currentClass]);
 
-  // --- SAVE GROUND TRUTH (บันทึกเป็นไฟล์ GT) ---
-  const handleSaveGroundTruth = async (advanceNext = false) => {
+  // --- SAVE GROUND TRUTH VIA RIGHT-CLICK ONLY (คลิกขวาเพื่อบันทึก GT เท่านั้น) ---
+  const handleGtNameChange = (e) => {
+    const newName = e.target.value;
+    setImageGtName(newName);
+    const err = checkGtNameDuplicate(newName, selectedImageIndex, images);
+    setGtNameError(err);
+    setImages((prev) =>
+      prev.map((img, idx) => (idx === selectedImageIndex ? { ...img, gt_name: newName } : img))
+    );
+  };
+
+  const handleSaveByRightClick = async (e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    if (!selectedImage) return;
+
+    // Auto-finish in-progress polygon if user placed >= 3 points
+    let currentAnnots = [...annotations];
+    if (drawMode === 'polygon' && polygonPoints.length >= 3) {
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const normPoints = polygonPoints.map((p) => [
+          Math.max(0, Math.min(1, p.x / canvas.width)),
+          Math.max(0, Math.min(1, p.y / canvas.height)),
+        ]);
+        const xs = normPoints.map((p) => p[0]);
+        const ys = normPoints.map((p) => p[1]);
+        const x_min = Math.min(...xs);
+        const x_max = Math.max(...xs);
+        const y_min = Math.min(...ys);
+        const y_max = Math.max(...ys);
+
+        if (x_max - x_min > 0.005 && y_max - y_min > 0.005) {
+          const newAnn = {
+            id: Math.random().toString(),
+            label: currentClass,
+            x_min,
+            y_min,
+            x_max,
+            y_max,
+            segmentation: normPoints,
+          };
+          currentAnnots = [...annotations, newAnn];
+          setAnnotations(currentAnnots);
+        }
+      }
+      setPolygonPoints([]);
+      setCursorPos(null);
+    }
+
+    // Validate GT Name uniqueness
+    const trimmedName = (imageGtName || '').trim();
+    if (!trimmedName) {
+      setRightClickToast({
+        type: 'error',
+        message: 'กรุณาพิมพ์ชื่อ GT รูปภาพนี้ก่อนคลิกขวาบันทึก',
+      });
+      setGtNameError('กรุณาพิมพ์ชื่อ GT สำหรับรูปภาพนี้ (ห้ามเว้นว่าง)');
+      return;
+    }
+
+    const dupError = checkGtNameDuplicate(trimmedName, selectedImageIndex, images);
+    if (dupError) {
+      setRightClickToast({
+        type: 'error',
+        message: dupError,
+      });
+      setGtNameError(dupError);
+      return;
+    }
+
     setSavingGt(true);
     try {
-      if (selectedImage?.id) {
-        await saveAnnotations(selectedImage.id, annotations);
-      }
-
-      // Mark current image as annotated in state
-      setImages((prev) =>
-        prev.map((img, idx) =>
-          idx === selectedImageIndex
-            ? { ...img, annotations: [...annotations], is_annotated: annotations.length > 0 }
-            : img
-        )
+      // 1. Update React state
+      const updatedImages = images.map((img, idx) =>
+        idx === selectedImageIndex
+          ? {
+              ...img,
+              gt_name: trimmedName,
+              annotations: currentAnnots,
+              is_annotated: currentAnnots.length > 0,
+            }
+          : img
       );
+      setImages(updatedImages);
 
-      setSaveFeedback(true);
-      setTimeout(() => setSaveFeedback(false), 2000);
+      // 2. Persist in Web Memory (localStorage)
+      const memoryKey = selectedImage.filename || `img_${selectedImageIndex}`;
+      saveItemToWebMemory(memoryKey, {
+        gt_name: trimmedName,
+        annotations: currentAnnots,
+        classList,
+      });
+      refreshWebMemoryCount();
 
-      if (advanceNext && selectedImageIndex < images.length - 1) {
-        setSelectedImageIndex(selectedImageIndex + 1);
+      // 3. Persist to Backend if image has backend ID
+      if (selectedImage.id) {
+        await saveAnnotations(selectedImage.id, currentAnnots);
       }
+
+      // 4. Trigger visual feedback toast
+      setSaveFeedback(true);
+      setRightClickToast({
+        type: 'success',
+        message: `บันทึก GT สำเร็จ (คลิกขวา): "${trimmedName}" (${currentAnnots.length} กรอบ) - บันทึกในความทรงจำเว็บแล้ว`,
+      });
+      setTimeout(() => {
+        setSaveFeedback(false);
+        setRightClickToast(null);
+      }, 3500);
     } catch (err) {
-      alert(`บันทึก GT ผิดพลาด: ${err.message}`);
+      setRightClickToast({
+        type: 'error',
+        message: `บันทึก GT ผิดพลาด: ${err.message}`,
+      });
     } finally {
       setSavingGt(false);
     }
@@ -1255,12 +1675,50 @@ nc: ${classList.length}
   // --- PACKAGE & PROCEED TO TRAIN (มัดรวมไฟล์ GT และไปเทรนโมเดล) ---
   const handlePackageAndTrain = async () => {
     if (images.length === 0) {
-      alert('กรุณาโหลดโฟลเดอร์รูปภาพก่อนเริ่มการเทรน');
+      alert('กรุณาโหลดรูปภาพก่อนเริ่มการเทรน');
+      return;
+    }
+
+    // 1. Validate that GT names are not duplicated across images
+    const dupMap = new Map();
+    for (let i = 0; i < images.length; i++) {
+      const name = (images[i].gt_name || '').trim().toLowerCase();
+      if (!name) continue;
+      if (dupMap.has(name)) {
+        const prevIdx = dupMap.get(name);
+        alert(
+          `ไม่สามารถนำไปเทรนได้: พบชื่อ GT ซ้ำกัน ("${images[i].gt_name}")\nที่รูปที่ ${prevIdx + 1} (${images[prevIdx].filename}) และรูปที่ ${i + 1} (${images[i].filename})\nกรุณาแก้ไขชื่อ GT ให้ไม่ซ้ำกันก่อนไปเทรน`
+        );
+        setSelectedImageIndex(i);
+        return;
+      }
+      dupMap.set(name, i);
+    }
+
+    // 2. Verify that there is at least one image with GT annotations
+    const annotatedImgs = images.filter(
+      (img) => (img.annotations && img.annotations.length > 0) || img.is_annotated
+    );
+    if (annotatedImgs.length === 0) {
+      alert(
+        'ยังไม่มีรูปภาพใดบันทึก Ground Truth (GT) เลย\nกรุณาตีกรอบและคลิกขวาบนภาพเพื่อบันทึก GT อย่างน้อย 1 รูปก่อนนำไปเทรน'
+      );
       return;
     }
 
     setBundling(true);
     try {
+      // 3. Ensure all annotations in state are synced to backend for all images with IDs
+      for (const img of images) {
+        if (img.id && img.annotations && img.annotations.length > 0) {
+          try {
+            await saveAnnotations(img.id, img.annotations);
+          } catch (e) {
+            console.warn(`Could not save GT for image ${img.id}:`, e);
+          }
+        }
+      }
+
       let ds = activeDataset;
       if (!ds && images[0]?.dataset_id) {
         ds = { id: images[0].dataset_id, name: 'current_dataset' };
@@ -1409,10 +1867,18 @@ nc: ${classList.length}
           )}
 
           {images.length > 0 && (
-            <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginLeft: '6px' }}>
-              ทั้งหมด: <strong>{images.length}</strong> รูป | บันทึก GT แล้ว:{' '}
-              <strong style={{ color: 'var(--accent-success)' }}>{annotatedCount}</strong> รูป (
-              {Math.round((annotatedCount / images.length) * 100)}%)
+            <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginLeft: '6px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <span>ทั้งหมด: <strong>{images.length}</strong> รูป</span>
+              <span>|</span>
+              <span>
+                บันทึก GT แล้ว:{' '}
+                <strong style={{ color: 'var(--accent-success)' }}>{annotatedCount}</strong> รูป (
+                {Math.round((annotatedCount / images.length) * 100)}%)
+              </span>
+              <span>|</span>
+              <span className="badge badge-primary" style={{ fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <Database size={12} /> ความทรงจำเว็บ: {webMemoryCount} รูป
+              </span>
             </div>
           )}
         </div>
@@ -1727,17 +2193,33 @@ nc: ${classList.length}
                       transition: 'all 0.15s ease',
                     }}
                   >
-                    <span
-                      style={{
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        maxWidth: '140px',
-                      }}
-                      title={displayName}
-                    >
-                      {displayName}
-                    </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', maxWidth: '145px', overflow: 'hidden' }}>
+                      <span
+                        style={{
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          fontWeight: isSelected ? 700 : 500,
+                          color: isSelected ? 'var(--accent-primary)' : 'var(--text-primary)',
+                        }}
+                        title={img.gt_name || displayName}
+                      >
+                        {img.gt_name ? `GT: ${img.gt_name}` : displayName}
+                      </span>
+                      {img.gt_name && (
+                        <span
+                          style={{
+                            fontSize: '10px',
+                            color: 'var(--text-muted)',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}
+                        >
+                          {displayName}
+                        </span>
+                      )}
+                    </div>
 
                     {hasGt ? (
                       <span className="badge badge-success" style={{ fontSize: '10px', padding: '2px 6px' }}>
@@ -1976,6 +2458,7 @@ nc: ${classList.length}
             <div
               ref={viewportRef}
               onWheel={handleCanvasWheel}
+              onContextMenu={handleSaveByRightClick}
               style={{
                 flex: 1,
                 minHeight: 0,
@@ -1986,10 +2469,43 @@ nc: ${classList.length}
                 position: 'relative',
                 background: 'radial-gradient(circle, #cbd5e1 1px, transparent 1px) 0 0 / 16px 16px, #f8fafc',
                 borderRadius: 'var(--radius-sm)',
-                border: '1px solid var(--border-color)',
+                border: saveFeedback ? '2px solid #10b981' : '1px solid var(--border-color)',
                 padding: '12px',
+                transition: 'border 0.2s ease',
               }}
             >
+              {/* Floating Animated Toast for Right-Click Save */}
+              {rightClickToast && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '16px',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    zIndex: 40,
+                    backgroundColor: rightClickToast.type === 'error' ? '#ef4444' : '#059669',
+                    color: '#ffffff',
+                    padding: '8px 20px',
+                    borderRadius: '24px',
+                    boxShadow: '0 8px 28px rgba(0, 0, 0, 0.35)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    pointerEvents: 'none',
+                    animation: 'fadeIn 0.2s ease',
+                  }}
+                >
+                  {rightClickToast.type === 'error' ? (
+                    <AlertTriangle size={16} />
+                  ) : (
+                    <CheckCircle2 size={16} />
+                  )}
+                  <span>{rightClickToast.message}</span>
+                </div>
+              )}
+
               {selectedImage ? (
                 <canvas
                   ref={canvasRef}
@@ -1999,6 +2515,7 @@ nc: ${classList.length}
                   onMouseUp={handleMouseUp}
                   onDoubleClick={handleDoubleClick}
                   onMouseLeave={() => setCursorPos(null)}
+                  onContextMenu={handleSaveByRightClick}
                   style={getCanvasStyle()}
                 />
               ) : null}
@@ -2104,13 +2621,66 @@ nc: ${classList.length}
                 marginBottom: '12px',
               }}
             >
-              <h4 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>
+              <h4 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
                 จัดประเภทออปเจค & บันทึก GT
               </h4>
               {saveFeedback && (
                 <span className="badge badge-success" style={{ fontSize: '11px' }}>
                   <Check size={12} /> บันทึกแล้ว
                 </span>
+              )}
+            </div>
+
+            {/* Unique GT Name for this image (ห้ามซ้ำกันเด็ดขาด) */}
+            <div
+              style={{
+                padding: '12px',
+                borderRadius: 'var(--radius-sm)',
+                backgroundColor: gtNameError ? '#fef2f2' : '#f8fafc',
+                border: `1.5px solid ${gtNameError ? '#ef4444' : '#e2e8f0'}`,
+                marginBottom: '12px',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <label style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+                  ชื่อ Ground Truth รูปนี้ (GT Name)
+                </label>
+                <span style={{ fontSize: '10px', color: '#ef4444', fontWeight: 600 }}>
+                  * ห้ามซ้ำกับรูปอื่น
+                </span>
+              </div>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type="text"
+                  className="form-control"
+                  style={{
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    borderColor: gtNameError ? '#ef4444' : (imageGtName ? '#10b981' : 'var(--border-color)'),
+                    backgroundColor: '#ffffff',
+                    paddingRight: '32px',
+                  }}
+                  placeholder="พิมพ์ชื่อ GT เช่น car_01, product_a..."
+                  value={imageGtName}
+                  onChange={handleGtNameChange}
+                />
+                {gtNameError ? (
+                  <X size={15} color="#ef4444" style={{ position: 'absolute', right: 10, top: 10 }} />
+                ) : imageGtName ? (
+                  <Check size={15} color="#10b981" style={{ position: 'absolute', right: 10, top: 10 }} />
+                ) : null}
+              </div>
+              {gtNameError ? (
+                <div style={{ fontSize: '11px', color: '#ef4444', marginTop: '4px', fontWeight: 600 }}>
+                  {gtNameError}
+                </div>
+              ) : (
+                <div style={{ fontSize: '11px', color: '#10b981', marginTop: '4px', display: 'flex', justifyContent: 'space-between' }}>
+                  <span>ชื่อ GT ไม่ซ้ำ (พร้อมบันทึกด้วยคลิกขวา)</span>
+                  {selectedImage?.is_annotated && (
+                    <span style={{ fontWeight: 600 }}>เก็บบันทึกแล้ว</span>
+                  )}
+                </div>
               )}
             </div>
 
@@ -2257,7 +2827,7 @@ nc: ${classList.length}
               )}
             </div>
 
-            {/* Section 3: Save GT & Next Actions */}
+            {/* Section 3: Right-Click GT Save Instruction & Status (ปุ่มกดถูกแทนที่ด้วยคลิกขวา) */}
             <div
               style={{
                 marginTop: '12px',
@@ -2268,38 +2838,53 @@ nc: ${classList.length}
                 gap: '8px',
               }}
             >
-              <button
-                className="btn btn-primary"
-                style={{ width: '100%', fontWeight: 600 }}
-                onClick={() => handleSaveGroundTruth(false)}
-                disabled={savingGt}
+              <div
+                style={{
+                  padding: '12px 14px',
+                  borderRadius: 'var(--radius-sm)',
+                  backgroundColor: saveFeedback ? '#ecfdf5' : '#f8fafc',
+                  border: `1.5px solid ${saveFeedback ? '#10b981' : '#e2e8f0'}`,
+                  transition: 'all 0.2s ease',
+                }}
               >
-                <Save size={14} /> {savingGt ? 'กำลังบันทึก GT...' : 'บันทึกไฟล์ GT รูปนี้'}
-              </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                  <MousePointerClick size={16} color={saveFeedback ? '#10b981' : 'var(--accent-primary)'} />
+                  <strong style={{ fontSize: '12px', color: saveFeedback ? '#065f46' : 'var(--text-primary)' }}>
+                    วิธีบันทึก GT: คลิกขวาบนภาพ
+                  </strong>
+                </div>
+                <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>
+                  ลากกรอบเสร็จแล้ว ให้ <strong>คลิกขวาที่ภาพ</strong> เพื่อบันทึก Ground Truth รูปนี้ลงในความทรงจำเว็บทันที (ไม่ใช้ปุ่มกด)
+                </p>
+                <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11px' }}>
+                  <span>สถานะรูปนี้:</span>
+                  {(selectedImage?.is_annotated || annotations.length > 0) ? (
+                    <span className="badge badge-success" style={{ fontSize: '10px' }}>
+                      บันทึก GT แล้ว ({annotations.length} กรอบ)
+                    </span>
+                  ) : (
+                    <span style={{ color: 'var(--text-muted)' }}>รอคลิกขวาเพื่อบันทึก</span>
+                  )}
+                </div>
+              </div>
 
+              {/* PACKAGE & TRAIN BUTTON */}
               <button
-                className="btn btn-secondary"
-                style={{ width: '100%', fontWeight: 500 }}
-                onClick={() => handleSaveGroundTruth(true)}
-                disabled={savingGt || selectedImageIndex >= images.length - 1}
-              >
-                บันทึก GT และไปรูปถัดไป &rarr;
-              </button>
-
-              <button
-                className="btn"
+                className="btn btn-lg"
                 style={{
                   width: '100%',
                   marginTop: '4px',
                   background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
                   color: '#ffffff',
                   fontWeight: 600,
-                  boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)',
+                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.35)',
                 }}
                 onClick={handlePackageAndTrain}
                 disabled={images.length === 0 || bundling}
+                title="มัดรวมไฟล์ภาพและไฟล์ GT ทั้งหมดที่บันทึกไว้ในเว็บ แล้วส่งไปเทรนโมเดล AI"
               >
-                <Play size={14} /> มัดรวมไฟล์ GT และไปเทรนโมเดล
+                <Play size={16} />
+                {bundling ? 'กำลังมัดรวมข้อมูล GT...' : 'มัดรวมไฟล์ GT และไปเทรนโมเดล'}
               </button>
             </div>
           </div>

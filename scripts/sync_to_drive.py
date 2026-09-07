@@ -106,15 +106,14 @@ def sync_project_to_drive(workspace_dir: Path = None):
 
         runs_dir = workspace_dir / "data" / "runs"
         if runs_dir.exists():
-            for run_path in runs_dir.iterdir():
-                if run_path.is_dir():
-                    ckpt_dir = run_path / "checkpoints"
-                    best_pt = ckpt_dir / "best.pt"
-                    if best_pt.exists():
-                        target_model_file = kdel_models_dir / f"{run_path.name}_best.pt"
-                        if not target_model_file.exists() or best_pt.stat().st_mtime > target_model_file.stat().st_mtime:
-                            shutil.copy2(best_pt, target_model_file)
-                            print(f"[DriveSync] Copied model weights: {target_model_file.name} ({best_pt.stat().st_size / (1024*1024):.2f} MB)")
+            for best_pt in runs_dir.rglob("best.pt"):
+                run_name = best_pt.parent.parent.name
+                if run_name == "runs":
+                    run_name = best_pt.parent.name
+                target_model_file = kdel_models_dir / f"{run_name}_best.pt"
+                if not target_model_file.exists() or best_pt.stat().st_mtime > target_model_file.stat().st_mtime:
+                    shutil.copy2(best_pt, target_model_file)
+                    print(f"[DriveSync] Copied model weights: {target_model_file.name} ({best_pt.stat().st_size / (1024*1024):.2f} MB)")
 
     # Destination 3: Create a clean latest zip package in G:\My Drive\TrainM\training_backup_latest.zip
     backup_zip_path = (trainm_dir if trainm_dir.exists() else dest_project) / "training_backup_latest.zip"
